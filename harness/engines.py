@@ -66,6 +66,16 @@ def claude_settings(run_dir: Path) -> Path:
     return p
 
 
+def _git_common_dir(worktree) -> str | None:
+    import subprocess
+    try:
+        r = subprocess.run(["git", "-C", str(worktree), "rev-parse", "--path-format=absolute",
+                            "--git-common-dir"], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return (r.stdout.strip() or None) if r.returncode == 0 else None
+
+
 def build_invocation(engine: str, *, role: str, worktree: Path, prompt: str, prompt_file: Path,
                      run_dir: Path, cfg: dict, frozen: list[str], attempt: int = 1,
                      read_only: bool = False, schema: dict | None = None,
@@ -88,12 +98,20 @@ def build_invocation(engine: str, *, role: str, worktree: Path, prompt: str, pro
         schema_file = run_dir / "schema.json"
         schema_file.write_text(json.dumps(schema))
     if engine == "codex":
-        sandbox = "read-only" if read_only else ecfg.get("sandbox", "workspace-write")
+        # Default "bypass" (inside the disposable worktree only): builders and reviewers must
+        # reach the Docker daemon for real-stack tests and commit (a worktree's git metadata
+        # lives outside the workspace-write roots). The external gate stays the authority.
+        # Intake is always read-only; "workspace-write" remains a per-project option.
+        sandbox = "read-only" if read_only else ecfg.get("sandbox", "bypass")
         argv = ["codex", "-c", 'approval_policy="never"', "exec"]
         if sandbox == "bypass":
             argv += ["--dangerously-bypass-approvals-and-sandbox"]
         else:
             argv += ["--sandbox", sandbox]
+            if sandbox == "workspace-write":
+                common = _git_common_dir(worktree)
+                if common:
+                    argv += ["--add-dir", common]  # lets codex commit inside the worktree
         argv += ["-C", str(worktree), "--json", "-o", str(last),
                  "-c", f'model_reasoning_effort="{ecfg.get("effort", "high")}"']
         if ecfg.get("model"):

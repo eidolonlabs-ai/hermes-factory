@@ -142,8 +142,14 @@ class EngineTests(CoreCase):
         self.assertEqual(engines.build_invocation("agy", **kw).argv,
                          ["agy", "-p", "P", "--dangerously-skip-permissions"])
         c = engines.build_invocation("codex", **kw).argv
-        self.assertIn("workspace-write", c)
+        self.assertIn("--dangerously-bypass-approvals-and-sandbox", c)  # default: needs docker + git
         self.assertEqual(c[-1], "-")
+        ws = models.validate_config({"project": "x", "engines": {"codex": {"sandbox": "workspace-write"}}})
+        c2 = engines.build_invocation("codex", **{**kw, "cfg": ws}).argv
+        self.assertIn("workspace-write", c2)
+        ro = engines.build_invocation("codex", **{**kw, "read_only": True}).argv
+        self.assertIn("read-only", ro)
+        self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", ro)
         with self.assertRaises(ValueError):
             engines.build_invocation("fake", **kw)
         self.assertEqual(engines.other_vendor("codex"), "claude")

@@ -14,7 +14,7 @@ build and review. Whether a milestone is done is decided by exit codes, never by
 - One definition of done (`CONTRACT.md`): frozen tests + `scripts/verify.sh <milestone>` +
   holdouts, judged by exit codes.
 - Unattended: each run happens in a disposable git worktree; engines run sandboxed where they
-  can, bypass flags only inside harness worktrees. You are interrupted only at checkpoints.
+  can for read-only work, bypass flags only inside harness worktrees (builders need Docker). You are interrupted only at checkpoints.
 - Cross-vendor review by default: the reviewer is not the vendor that built the milestone.
 - Uses Hermes natively: skills, profiles, shell hooks, kanban, cron, notifications,
   `delegate_task`, `clarify`, the browser.
@@ -106,7 +106,7 @@ Every human touch is logged with `harness note` (intervention count).
 
 | Engine | Call | Permissions | Guard during the run |
 |---|---|---|---|
-| Codex | `codex exec -C <wt> --sandbox workspace-write -c approval_policy="never" --json --output-schema F` | Codex sandbox | sandbox + post-hoc checks |
+| Codex | `codex exec -C <wt> --dangerously-bypass-approvals-and-sandbox --json` (intake: `--sandbox read-only`) | bypass, worktree only (default); `engines.codex.sandbox: "workspace-write"` optional | post-hoc checks (no in-agent guard yet) |
 | Claude | `claude -p --dangerously-skip-permissions --strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings <run.json> --max-budget-usd N` | bypass, worktree only | PreToolUse guard injected per run via `--settings` (no files in the repo) |
 | Hermes | `hermes -p harness-coder -z PROMPT --yolo --accept-hooks`, cwd = worktree | bypass, worktree only | profile shell hooks: `pre_tool_call` guard (`fail_closed: true`), `pre_verify` gate |
 | Antigravity (optional) | `agy -p --dangerously-skip-permissions` | bypass, worktree only | post-hoc checks only |

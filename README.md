@@ -33,7 +33,7 @@ answers each one outside the agent:
 | "Done" without proof | An external gate re-runs everything; the agent's report is never evidence. `NOT_RUN` is never `PASS`. |
 | Weakened tests | Tests are frozen at plan approval (hash-checked), some are **holdouts** kept out of the repo, and an in-agent guard blocks edits to frozen files. |
 | Mocks instead of reality | `verify.sh` boots the whole stack in Docker Compose (database, API, web) and runs integration and Playwright E2E tests against it. |
-| Permission prompts | Each run happens in a disposable git worktree; engines run sandboxed (Codex) or with bypass inside the worktree only. Merge is fast-forward on green. |
+| Permission prompts | Each run happens in a disposable git worktree; engines run with bypass inside that worktree only. Merge is fast-forward on green. |
 
 Cross-vendor review matters: in the ChronoGraph benchmark, single-vendor audits missed bugs in
 their own vendor's code that the other vendor found. See [`examples/chronograph`](examples/chronograph).
@@ -102,8 +102,9 @@ For overnight runs or phone intake, use kanban mode: one card per milestone for 
 - Guards and holdouts protect against **mistakes**, not a malicious agent. In bypass mode an
   agent can read any file you can, including the holdout store.
 - Only the code under test runs in containers; the coding agents run on your machine.
-- Codex runs inside its own sandbox; Claude and Hermes run with permission bypass inside the
-  run's worktree, guarded by hooks; Antigravity (optional) has only the external gate.
+- Builders need the Docker daemon for real-stack tests, so Codex, Claude and Hermes run with
+  permission bypass inside the run's disposable worktree. Claude and Hermes are guarded by
+  hooks; Codex and Antigravity rely on the external gate (Codex intake stays read-only).
 
 ## License
 
