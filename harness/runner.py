@@ -6,6 +6,7 @@ then the merge policy applies (ff | pr | human). Worktrees are kept on failure.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 import re
 import time
@@ -36,6 +37,19 @@ def write_status(rdir: Path, **kw) -> None:
     s = read_json(p, {})
     s.update(kw)
     write_json(p, s)
+
+
+def _register_active(c, engine: str, env: dict):
+    """Hermes shell hooks run with a scrubbed env and the profile home as cwd, so the guard
+    hook finds live runs through <HARNESS_HOME>/active/<run_id>.json (see hooks_adapters)."""
+    if engine != "hermes":
+        return None
+    d = state.home() / "active"
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / f"{c.run_id}.json"
+    f.write_text(json.dumps({"pid": os.getpid(), "run_id": c.run_id, "root": str(c.ws.path),
+                             "frozen_file": env["HARNESS_FROZEN_FILE"]}))
+    return f
 
 
 def _down_engine_stack(c) -> None:
@@ -101,9 +115,14 @@ def _phase(c: _Ctx, role: str, engine: str, max_attempts: int, feedback: str) ->
                                        attempt=n, milestone=c.ms.get("verify_as") or c.ms["id"])
         inv.env["COMPOSE_PROJECT_NAME"] = c.compose_proj
         remaining = max(1.0, c.deadline - time.monotonic())
-        res = run_process(inv.argv, c.ws.path,
-                          min(c.cfg["budgets"]["engine_timeout_min"] * 60, remaining),
-                          c.rdir / f"engine-{role}-{n}.log", inv.stdin_text, inv.env)
+        active = _register_active(c, engine, inv.env)
+        try:
+            res = run_process(inv.argv, c.ws.path,
+                              min(c.cfg["budgets"]["engine_timeout_min"] * 60, remaining),
+                              c.rdir / f"engine-{role}-{n}.log", inv.stdin_text, inv.env)
+        finally:
+            if active:
+                active.unlink(missing_ok=True)
         _down_engine_stack(c)  # agents boot stacks while working; never leave them running
         info = engines.parse_output(engine, Path(res.log), inv.last_message)
         info.update(rc=res.returncode, timed_out=res.timed_out, seconds=int(res.duration_s))

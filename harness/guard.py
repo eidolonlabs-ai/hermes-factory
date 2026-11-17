@@ -13,6 +13,7 @@ Public API:
 """
 from __future__ import annotations
 
+import os
 import posixpath
 import re
 import shlex
@@ -46,10 +47,16 @@ def _relativize(path: str, root: str) -> str | None:
         return None  # home dir: not the guard's concern (rm of ~ itself is handled in shell)
     if p.startswith("/"):
         p = re.sub(r"^/+", "/", p)
-        r = posixpath.normpath(root.replace("\\", "/")) if root else ""
-        n = posixpath.normpath(p)
-        if r and (n == r or n.startswith(r.rstrip("/") + "/")):
-            p = n[len(r.rstrip("/")):].lstrip("/") or "."
+        # Compare literal and symlink-resolved forms of both sides: on macOS /var is a
+        # symlink to /private/var, and tools report either form.
+        roots = {posixpath.normpath(root.replace("\\", "/")), os.path.realpath(root)} if root else set()
+        paths = {posixpath.normpath(p), os.path.realpath(p)}
+        for r in sorted(roots, key=len, reverse=True):
+            r = r.rstrip("/")
+            hit = next((n for n in paths if n == r or n.startswith(r + "/")), None)
+            if r and hit:
+                p = hit[len(r):].lstrip("/") or "."
+                break
         else:
             return None  # outside the repo -> allowed
     n = posixpath.normpath(p)  # resolves a/../.env -> .env and .git/./config
