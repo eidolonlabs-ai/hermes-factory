@@ -1,0 +1,110 @@
+# hermes-agent-harness
+
+Hand [Hermes Agent](https://hermes-agent.nousresearch.com) a spec, answer its questions,
+approve a plan, and let it build your app for hours, milestone by milestone, without clicking
+"approve". Hermes orchestrates; **Claude Code**, **Codex** or **Hermes itself** write the code;
+a **different vendor** reviews every milestone; and whether a milestone is done is decided by
+exit codes on a **real Docker Compose stack**, never by an agent saying "done".
+
+```
+you ──spec──► Hermes ── intake questions ──► you
+                 │
+                 ├─ M0  architect writes SPEC, compose.yaml, verify.sh, tests, holdouts, plan
+                 ├─ ✋  you approve the plan → freeze
+                 └─ M1..Mn, each in its own git worktree:
+                      builder (codex | claude | hermes) → GATE → cross-vendor review → GATE → merge
+                      GATE = scope · frozen tests · hygiene · compose policy ·
+                             verify.sh on the live stack · holdouts · diff audit · candidate hash
+```
+
+Part of a family of platform-native harnesses that share one [`CONTRACT.md`](CONTRACT.md):
+this one (Hermes), [`codex-harness-template`](https://github.com/theRealMarkCastillo/codex-harness-template)
+(Codex), and [`agy-software-factory`](https://github.com/theRealMarkCastillo/agy-software-factory)
+(Antigravity).
+
+## Why
+
+Unattended coding agents fail in four ways: they stop early and claim success, they drown in
+logs, they "fix" tests instead of code, and they block on permission prompts. This harness
+answers each one outside the agent:
+
+| Failure | What the harness does |
+|---|---|
+| "Done" without proof | An external gate re-runs everything; the agent's report is never evidence. `NOT_RUN` is never `PASS`. |
+| Weakened tests | Tests are frozen at plan approval (hash-checked), some are **holdouts** kept out of the repo, and an in-agent guard blocks edits to frozen files. |
+| Mocks instead of reality | `verify.sh` boots the whole stack in Docker Compose (database, API, web) and runs integration and Playwright E2E tests against it. |
+| Permission prompts | Each run happens in a disposable git worktree; engines run sandboxed (Codex) or with bypass inside the worktree only. Merge is fast-forward on green. |
+
+Cross-vendor review matters: in the ChronoGraph benchmark, single-vendor audits missed bugs in
+their own vendor's code that the other vendor found. See [`examples/chronograph`](examples/chronograph).
+
+## Requirements
+
+- macOS or Linux, Python 3.11+, git
+- Docker with Compose v2 (projects that cannot run in Linux containers can opt out with a
+  written reason; their gates say "not isolated")
+- Hermes Agent, plus at least one coding engine logged in: `claude`, `codex`
+  (`agy` optional)
+
+## Install
+
+```bash
+git clone https://github.com/theRealMarkCastillo/hermes-agent-harness ~/git/hermes-agent-harness
+cd ~/git/hermes-agent-harness && ./install.sh     # --dry-run to preview
+harness doctor
+```
+
+`install.sh` adds the `harness` CLI to `~/.local/bin`, copies the `harness` and
+`harness-worker` skills into Hermes, and creates two dedicated profiles: `harness-coder` (Hermes
+as a coding engine, with guard hooks) and `harness-worker` (kanban operator). Your default
+profile is not modified.
+
+## Use
+
+In a Hermes chat:
+
+> Build the app in `inputs/HANDOFF.md` in `~/code/myapp` with the harness. Ping me at checkpoints.
+
+Hermes follows the `harness` skill: `harness init` (adds AGENTS.md, compose.yaml, verify.sh
+skeletons), read-only intake, your answers, M0, your plan approval, then `harness pipeline` in
+the background. It messages you at checkpoints, red gates and the end.
+
+Or drive it yourself:
+
+```bash
+cd ~/code/myapp && git init -b main && harness init
+$EDITOR inputs/HANDOFF.md
+harness intake inputs/HANDOFF.md --engine codex      # questions for you (read-only)
+harness run --milestone M0 --role build --engine claude --review-engine codex
+harness freeze                                        # after you approve .harness/plan.json
+harness pipeline                                      # M1..Mn until a checkpoint / red / budget
+harness status
+```
+
+For overnight runs or phone intake, use kanban mode: one card per milestone for the
+`harness-worker` profile (see `hermes/skills/harness-worker`).
+
+## What's where
+
+| Path | |
+|---|---|
+| `harness/` | the CLI (Python stdlib only): gate, runner, pipeline, guard, compose policy, audit-diff |
+| `template/` | files `harness init` adds to a project |
+| `hermes/` | skills, hook scripts |
+| `contract/` | shared guard test vectors and JSON schemas |
+| `CONTRACT.md` | rules shared with the sibling harnesses |
+| `DESIGN.md` | architecture and decisions |
+| `examples/chronograph/` | intake + build benchmarks with results |
+| `tests/` | `python3 -m unittest discover -s tests` (fake engines + a real compose stack) |
+
+## Honest limits
+
+- Guards and holdouts protect against **mistakes**, not a malicious agent. In bypass mode an
+  agent can read any file you can, including the holdout store.
+- Only the code under test runs in containers; the coding agents run on your machine.
+- Codex runs inside its own sandbox; Claude and Hermes run with permission bypass inside the
+  run's worktree, guarded by hooks; Antigravity (optional) has only the external gate.
+
+## License
+
+MIT

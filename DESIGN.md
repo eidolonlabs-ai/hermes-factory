@@ -1,6 +1,6 @@
 # hermes-agent-harness — Design
 
-Status: v0.3. Hermes-native. Sibling repos: `agy-software-factory` (Antigravity),
+Status: v0.4 (implemented: CLI, gate, guard, compose, Hermes layer; live-checked hooks). Hermes-native. Sibling repos: `agy-software-factory` (Antigravity),
 `codex-harness-template` (Codex). Rules shared between them live in `CONTRACT.md`.
 
 ## 1. Purpose
@@ -180,6 +180,12 @@ Worktrees, no push, merge only on green: mistakes stay on a disposable branch. G
 known-bad commands and writes to protected paths. In bypass mode an agent can still read
 anything you can, including the holdout store — holdouts are a discipline that keeps them out
 of the repo, prompts and context, not a secret. Engines in containers are a later option.
+
+Hermes runs shell hooks from the profile home with a scrubbed environment, so a hook cannot
+see which worktree fired it. The runner registers each live Hermes-engine run in
+`~/.hermes/harness/active/<run>.json` (with its pid), and the guard checks a tool call against
+every active run, taking the strictest decision. Claude's `--settings` hooks inherit the
+engine environment directly.
 
 Hermes shell hooks need one-time consent per `(event, command)`. The harness runs the
 coding profile with `--accept-hooks`, and the hooks live only in the dedicated `harness-coder`

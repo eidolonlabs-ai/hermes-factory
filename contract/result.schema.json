@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "harness-contract/result.schema.json",
+  "title": "One run's result.json (written atomically, stored outside the project repo)",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "run_id",
+    "milestone",
+    "role",
+    "engine",
+    "status",
+    "passed",
+    "checks"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "project": {
+      "type": "string"
+    },
+    "milestone": {
+      "type": "string",
+      "pattern": "^M[0-9]+$"
+    },
+    "role": {
+      "enum": [
+        "build",
+        "review",
+        "intake"
+      ]
+    },
+    "engine": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "passed": {
+      "type": "boolean"
+    },
+    "merged": {
+      "type": "boolean"
+    },
+    "attempts": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "NOT_RUN"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "log": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "candidate_sha256": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "head_sha": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "merge_sha": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "started": {
+      "type": "string"
+    },
+    "finished": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "cost_usd": {
+      "type": [
+        "number",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": true
+}

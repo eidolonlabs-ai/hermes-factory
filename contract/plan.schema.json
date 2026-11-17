@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "harness-contract/plan.schema.json",
+  "title": "Milestone plan (.harness/plan.json), written in M0, frozen at checkpoint 1",
+  "type": "object",
+  "required": [
+    "milestones",
+    "frozen"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "milestones": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "goal",
+          "acceptance",
+          "allowed_paths"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^M[1-9][0-9]*$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "goal": {
+            "type": "string",
+            "minLength": 1
+          },
+          "acceptance": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "allowed_paths": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "builder": {
+            "type": "string",
+            "description": "engine id, e.g. codex | claude | hermes | agy"
+          },
+          "reviewer": {
+            "type": "string",
+            "description": "engine id or 'cross' (a different vendor than the builder)"
+          },
+          "ui": {
+            "type": "boolean",
+            "description": "reviewer adds the visual pass"
+          },
+          "checkpoint": {
+            "type": "boolean",
+            "description": "stop for a human after this milestone"
+          },
+          "verify_as": {
+            "type": "string",
+            "pattern": "^M[0-9]+$",
+            "description": "gate level for follow-up milestones"
+          }
+        }
+      }
+    },
+    "frozen": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "repo-relative files frozen at checkpoint 1"
+    },
+    "holdout": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "holdout test files removed from the repo at freeze"
+    }
+  }
+}
