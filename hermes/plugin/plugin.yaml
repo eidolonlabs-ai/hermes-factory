@@ -1,0 +1,19 @@
+name: harness
+label: Harness
+kind: standalone
+version: 0.2.0
+author: Mark Castillo
+homepage: https://github.com/theRealMarkCastillo/hermes-agent-harness
+description: >
+  Hermes side of hermes-agent-harness (unattended milestone builds with an
+  external gate). Guards every tool call of a harness coding run (frozen
+  files, protected paths, no push), nudges the coder to run the milestone's
+  verify script before finishing, and bundles the `harness` and
+  `harness-worker` skills. Needs the `harness` engine on PATH:
+  `uv tool install git+https://github.com/theRealMarkCastillo/hermes-agent-harness`,
+  then `harness setup`.
+requires_hermes: ">=0.23.0"
+provides_tools: []
+provides_hooks:
+  - pre_tool_call
+  - pre_verify

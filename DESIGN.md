@@ -58,20 +58,35 @@ hermes-agent-harness/
 │   ├─ cli  runner  gate  engines  workspace  process  holdout  guard  compose_policy
 │   ├─ audit_diff  detect  models  evidence
 │   └─ prompts/{intake,architect,architect_review,build,review}.md
-├─ hermes/
-│   ├─ skills/{harness,harness-worker}/SKILL.md
-│   ├─ hooks/{guard.py,verify_gate.py}       ← Hermes shell hooks
-│   └─ profiles/{harness-coder,harness-worker}/   ← SOUL.md + config fragments (hooks)
+├─ hermes/plugin/                  ← Hermes plugin `harness` (installable on its own)
+│   ├─ plugin.yaml  __init__.py           ← pre_tool_call guard, pre_verify nudge
+│   └─ skills/{harness,harness-worker}/   ← also copied into the skill index by `harness setup`
+├─ profiles/{harness-coder,harness-worker}/profile.json   ← what `harness setup` creates
+├─ pyproject.toml                  ← `uv tool install` / `pipx`: `harness`, `harness-hook`
 ├─ contract/                       ← shared with sibling repos
 │   └─ guard-cases.json  plan.schema.json  result.schema.json
 ├─ examples/chronograph/           ← intake + build benchmarks
 ├─ tests/                          ← self-tests with fake engines (unittest)
-└─ install.sh                      ← CLI → ~/.local/bin/harness, skills, profile, hooks
+└─ install.sh                      ← engine (uv/pipx) + `harness setup`
 ```
 
-"Use this template" gives a repo that contains the harness itself; `harness init --here`
-moves `template/*` to the root and removes the harness sources. Most users run `install.sh`
-once and `harness init` in any repo.
+The harness is a tool, not a repo to fork: install it once per machine and run `harness init`
+in any project repo. Three layers, each replaceable on its own:
+
+| Layer | Where | Installed by |
+|---|---|---|
+| Engine (`harness`, `harness-hook`; stdlib only) | isolated tool venv | `uv tool install` / `pipx` |
+| Hermes side (skills, profiles, guard plugin) | `$HERMES_HOME` | `harness setup` |
+| Project files (`template/`) | each project repo | `harness init` |
+
+A wheel carries `template/`, `hermes/plugin/` and `profiles/` under `harness/_data/`
+(`harness/resources.py` falls back to the repo folders in a checkout). The plugin never
+imports the engine; it calls `harness-hook` on PATH, so
+`hermes plugins install owner/repo/hermes/plugin` works for the plugin alone.
+
+Profiles are created by cloning the active profile (`hermes profile create --clone`), not as
+Hermes profile distributions: a distribution installs without a model or keys, and a coding
+engine that cannot run until someone configures it defeats "install and go".
 
 ## 4. Lifecycle
 
@@ -108,7 +123,7 @@ Every human touch is logged with `harness note` (intervention count).
 |---|---|---|---|
 | Codex | `codex exec -C <wt> --dangerously-bypass-approvals-and-sandbox --json` (intake: `--sandbox read-only`) | bypass, worktree only (default); `engines.codex.sandbox: "workspace-write"` optional | post-hoc checks (no in-agent guard yet) |
 | Claude | `claude -p --dangerously-skip-permissions --strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings <run.json> --max-budget-usd N` | bypass, worktree only | PreToolUse guard injected per run via `--settings` (no files in the repo) |
-| Hermes | `hermes -p harness-coder -z PROMPT --yolo --accept-hooks`, cwd = worktree | bypass, worktree only | profile shell hooks: `pre_tool_call` guard (`fail_closed: true`), `pre_verify` gate |
+| Hermes | `hermes -p harness-coder -z PROMPT --yolo --accept-hooks`, cwd = worktree | bypass, worktree only | plugin `harness` in the profile: `pre_tool_call` guard (blocks on deny, error, timeout, missing engine), `pre_verify` nudge |
 | Antigravity (optional) | `agy -p --dangerously-skip-permissions` | bypass, worktree only | post-hoc checks only |
 
 Review runs use read-only modes where they exist (`codex review --base`, `--sandbox read-only`).
@@ -181,15 +196,21 @@ known-bad commands and writes to protected paths. In bypass mode an agent can st
 anything you can, including the holdout store — holdouts are a discipline that keeps them out
 of the repo, prompts and context, not a secret. Engines in containers are a later option.
 
-Hermes runs shell hooks from the profile home with a scrubbed environment, so a hook cannot
-see which worktree fired it. The runner registers each live Hermes-engine run in
-`~/.hermes/harness/active/<run>.json` (with its pid), and the guard checks a tool call against
-every active run, taking the strictest decision. Claude's `--settings` hooks inherit the
-engine environment directly.
+Hermes serves sessions from one gateway process shared by every profile, so a hook there sees
+neither the engine's `HARNESS_*` variables nor a per-profile `HERMES_HOME`. Two consequences:
 
-Hermes shell hooks need one-time consent per `(event, command)`. The harness runs the
-coding profile with `--accept-hooks`, and the hooks live only in the dedicated `harness-coder`
-profile, never in your default profile.
+- The plugin asks Hermes which profile the current turn belongs to (`ctx.profile_name`) and
+  guards only `harness-coder` (or a process that does carry `HARNESS_ROOT`). Enabled anywhere
+  else it is a no-op.
+- The runner registers each live Hermes-engine run in `~/.hermes/harness/active/<run>.json`
+  (with its pid). The guard uses the session's working directory when it is a harness
+  worktree; otherwise it checks the call against every active run and takes the strictest
+  decision. Claude's `--settings` hooks inherit the engine environment directly.
+
+The guard is a plugin hook, not a config.yaml shell hook: no absolute paths in config, no
+per-command consent, and it updates with `harness setup`. A plugin callback that raises would
+be skipped by Hermes (fail open), so the callback catches everything and returns a block.
+`harness setup` refuses to run while a Hermes-engine run is live, because it reloads the plugin.
 
 ## 10. harness CLI
 

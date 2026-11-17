@@ -1,0 +1,4 @@
+{
+  "description": "Coding engine for hermes-agent-harness runs (guard + verify hooks).",
+  "plugin": true
+}

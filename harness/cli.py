@@ -1,4 +1,4 @@
-"""harness CLI: init, doctor, intake, freeze, run, wait, gate, pipeline, plan add, status, note."""
+"""harness CLI: init, setup, doctor, intake, freeze, run, wait, gate, pipeline, plan add, status, note."""
 from __future__ import annotations
 
 import argparse
@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import engines, state, workspace
 from .evidence import now, read_json, tail
+from .resources import data_dir
 from .models import (ConfigError, DEFAULT_CONFIG, load_config, load_plan, milestone_def,
                      validate_config, validate_milestone)
 
@@ -41,7 +42,7 @@ def resolve(args) -> tuple[Path, str]:
 
 
 # ---------------------------------------------------------------- commands
-TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "template"
+TEMPLATE_DIR = data_dir("template")
 
 
 def _copy_template(repo: Path, project: str, host: bool) -> list[str]:
@@ -94,6 +95,13 @@ def cmd_init(a) -> int:
     return 0
 
 
+def cmd_setup(a) -> int:
+    from .hermes_setup import run_setup
+    res = run_setup(dry_run=a.dry_run, with_profiles=a.profiles)
+    out(res)
+    return 0 if res.get("ok") else 1
+
+
 def cmd_doctor(a) -> int:
     checks = []
 
@@ -102,6 +110,9 @@ def cmd_doctor(a) -> int:
     add("python>=3.11", sys.version_info >= (3, 11), sys.version.split()[0])
     import shutil
     add("git", bool(shutil.which("git")), shutil.which("git") or "missing")
+    add("harness-hook on PATH", bool(shutil.which("harness-hook")),
+        shutil.which("harness-hook") or "missing: the Hermes guard plugin needs it (re-run install.sh)")
+    add("template", TEMPLATE_DIR.is_dir(), str(TEMPLATE_DIR))
     try:
         h = state.home()
         add("home writable", os.access(h, os.W_OK), str(h))
@@ -334,6 +345,8 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("--repo", help="project repo (default: cwd)")
     common.add_argument("--project", help="project name (default: from .harness/config.json)")
     ap = argparse.ArgumentParser(prog="harness")
+    from . import __version__
+    ap.add_argument("--version", action="version", version=f"harness {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def add(name, fn, **kw):
@@ -344,6 +357,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--stack", choices=["compose", "host"], default="compose")
     p.add_argument("--reason")
     p.add_argument("--no-commit", dest="commit", action="store_false")
+    p = add("setup", cmd_setup, help="install the Hermes skills, profiles and guard plugin")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--no-profiles", dest="profiles", action="store_false",
+                   help="skills only; do not create or change Hermes profiles")
     add("doctor", cmd_doctor)
     p = add("intake", cmd_intake)
     p.add_argument("source")

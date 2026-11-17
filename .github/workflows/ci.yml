@@ -17,6 +17,25 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: shared guard contract
         run: python -m unittest tests.test_guard -v
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: git config --global user.email ci@example.com && git config --global user.name ci
+      - name: install the wheel (not editable) and use it away from the checkout
+        run: |
+          pip install .
+          cd "$(mktemp -d)"
+          harness --version
+          git init -q -b main proj && cd proj
+          harness init --no-commit
+          test -f AGENTS.md && test -f scripts/verify.sh && test -f .harness/config.json
+          echo '{"tool_name":"terminal","tool_input":{"command":"git push"},"cwd":"."}' | harness-hook hermes | grep -q '"block"'
+          HERMES_HOME="$PWD/.hh" harness setup --no-profiles
+          test -f .hh/skills/software-factory/harness/SKILL.md
+          test -f .hh/skills/software-factory/harness/templates/audit/run.sh
   macos:
     runs-on: macos-latest
     steps:

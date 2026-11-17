@@ -57,15 +57,40 @@ their own vendor's code that the other vendor found. See [`examples/chronograph`
 ## Install
 
 ```bash
-git clone https://github.com/theRealMarkCastillo/hermes-agent-harness ~/git/hermes-agent-harness
-cd ~/git/hermes-agent-harness && ./install.sh     # --dry-run to preview
+curl -fsSL https://raw.githubusercontent.com/theRealMarkCastillo/hermes-agent-harness/main/install.sh | bash
 harness doctor
 ```
 
-`install.sh` adds the `harness` CLI to `~/.local/bin`, copies the `harness` and
-`harness-worker` skills into Hermes, and creates two dedicated profiles: `harness-coder` (Hermes
-as a coding engine, with guard hooks) and `harness-worker` (kanban operator). Your default
-profile is not modified.
+That installs the engine with [uv](https://docs.astral.sh/uv/) (or pipx) and runs
+`harness setup`. The same thing by hand:
+
+```bash
+uv tool install git+https://github.com/theRealMarkCastillo/hermes-agent-harness
+harness setup            # --dry-run to preview
+```
+
+| Piece | What you get | Installed by |
+|---|---|---|
+| Engine | `harness` and `harness-hook` on PATH (Python stdlib only) | `uv tool install` / `pipx install` |
+| Skills | `harness`, `harness-worker` in your Hermes skill index | `harness setup` |
+| Profiles | `harness-coder` (Hermes as a coding engine) and `harness-worker` (kanban operator), cloned from your active profile so they have your model and keys | `harness setup` |
+| Guard plugin | Hermes plugin `harness`, enabled in `harness-coder`: blocks writes to frozen and protected files, pushes and the like; blocks everything if the engine is missing | `harness setup` |
+| Project files | AGENTS.md, compose.yaml, verify/holdout scripts, `.harness/config.json` | `harness init` in each project repo |
+
+Your default profile's config is not modified; it only receives the two skills.
+
+Other ways in:
+
+- **Plugin only** (engine already installed; you manage the profile yourself):
+  `hermes -p harness-coder plugins install theRealMarkCastillo/hermes-agent-harness/hermes/plugin --enable`.
+  The guard acts only in a profile named `harness-coder`; enabled anywhere else it does nothing.
+- **From a checkout** (to hack on it): `git clone` then `./install.sh` for an editable install.
+- **Without Hermes:** the engine alone drives `claude` and `codex`; `harness setup` skips what
+  it cannot find.
+
+Update: `uv tool upgrade hermes-agent-harness && harness setup`. Remove:
+`uv tool uninstall hermes-agent-harness`, `hermes profile delete harness-coder` (and
+`harness-worker`), and delete `~/.hermes/skills/software-factory/harness*`.
 
 ## Use
 
@@ -91,7 +116,7 @@ harness preview                                       # app with published ports
 ```
 
 For overnight runs or phone intake, use kanban mode: one card per milestone for the
-`harness-worker` profile (see `hermes/skills/harness-worker`).
+`harness-worker` profile (see `hermes/plugin/skills/harness-worker`).
 
 ## What's where
 
@@ -99,7 +124,8 @@ For overnight runs or phone intake, use kanban mode: one card per milestone for 
 |---|---|
 | `harness/` | the CLI (Python stdlib only): gate, runner, pipeline, guard, compose policy, audit-diff |
 | `template/` | files `harness init` adds to a project |
-| `hermes/` | skills, hook scripts |
+| `hermes/plugin/` | Hermes plugin: guard and verify hooks, the two skills |
+| `profiles/` | the Hermes profiles `harness setup` creates |
 | `contract/` | shared guard test vectors and JSON schemas |
 | `CONTRACT.md` | rules shared with the sibling harnesses |
 | `DESIGN.md` | architecture and decisions |

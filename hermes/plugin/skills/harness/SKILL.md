@@ -27,7 +27,9 @@ code yourself and never decide "done" yourself. Rules: `CONTRACT.md`; design: `D
 ## Prerequisites
 - `harness doctor` is ok: Python 3.11+, git, Docker daemon + Compose v2, and at least the
   engines named in `.harness/config.json` (`claude auth status`, `codex login status`).
-- Installed via the repo's `install.sh` (puts `harness` on PATH, profiles, this skill).
+- Engine installed (`harness --version`); if missing: `uv tool install
+  git+https://github.com/theRealMarkCastillo/hermes-agent-harness` then `harness setup` (skills,
+  profiles `harness-coder` / `harness-worker`, guard plugin). Re-run `harness setup` after upgrades.
 
 ## Procedure
 1. **Preflight** (`terminal`): `harness doctor`. Fix engine logins before anything burns.
