@@ -1,0 +1,74 @@
+{
+ "claude-hh": [
+  {
+   "id": "F1",
+   "severity": "medium",
+   "category": "neo4j_postgres_sync",
+   "title": "Neo4j is committed before the Postgres transaction, and nothing ever repairs a mismatch",
+   "location": "api/app/engine.py:83-102 (project), called from engine.py:136 (ingest), engine.py:166 (seed_demo), api/app/query_routes.py:99 (retract_fact)",
+   "description": "project() opens its own Neo4j transaction and commits it (engine.py:99) while the Postgres transaction is still open. Only afterwards does it run the neo4j_synced_at UPDATE (engine.py:100-102). The caller then runs another SELECT and finally commits Postgres when `engine.begin()` exits. If anything fails after the Neo4j commit, Postgres rolls back but Neo4j keeps the change. Examples: the connection drops, the server restarts or fails over, or a statement is cancelled. Nothing checks neo4j_synced_at afterwards: there is no reconciliation at startup or on read (grep shows the column is only written, at engine.py:101). The divergence is therefore permanent. GET /api/graph reads only from Neo4j, so the bad state is what users see. Holding PROJECTION_LOCK protects readers from seeing a half-finished write, but it does not cover a rollback after the Neo4j commit.",
+   "reproduction": "Demo state, where web-01 HAS_IP 10.0.1.17 is active. POST /api/episodes with occurred_at=2025-06-01T00:00:00Z and content 'web-01 has IP 10.0.2.2'. Make the Postgres connection fail (restart db, or kill the backend with pg_terminate_backend) after engine.py:99 commits and before the transaction exits at engine.py:145. Result: Postgres still has 10.0.1.17 active with valid_until NULL. Neo4j has fact 10.0.1.17 marked superseded with valid_until 2025-06-01, plus a live FACT edge with the new fact_id for 10.0.2.2. That fact_id does not exist in fact_ledger, and BIGSERIAL never reuses it. GET /api/graph now shows web-01 \u2192 10.0.2.2 forever, and GET /api/facts/{that id}/lineage returns 404. The same thing happens in seed_demo: if Postgres fails after the DETACH DELETE and reprojection, Neo4j holds the new demo graph while Postgres keeps the old ledger.",
+   "expected": "SPEC \u00a74.6 requires a design that 'guarantees Neo4j ends identical to the committed ledger', and neo4j_synced_at should mark rows that still need projecting.",
+   "actual": "Neo4j can permanently hold facts or states that were never committed in the source-of-truth ledger.",
+   "spec_reference": "HANDOFF \u00a72 (Postgres is the source of truth; Neo4j is the live projection), SPEC \u00a72.2 and \u00a74.6"
+  },
+  {
+   "id": "F2",
+   "severity": "medium",
+   "category": "temporal_conflict_resolution / spec_contradiction",
+   "title": "A backdated episode that asserts the current active object is dropped as a no-op, so the history it carries is lost",
+   "location": "api/app/engine.py:31 and engine.py:38-39 (the R0 check runs before the time-based covered/newer logic at engine.py:44-59)",
+   "description": "`active` is found by object alone, ignoring the episode's occurred_at. Any assertion whose object equals the current active fact therefore returns 'noop' before the out-of-order logic runs. A late-arriving episode that says the value took effect earlier is silently thrown away, and the timeline keeps reporting the old value for that period. CLARIFICATIONS #1 requires backdated episodes to 'split/adjust overlapping intervals'. CLARIFICATIONS #2 asks only about re-asserting the current fact, not about older history. SPEC \u00a74.2 R0 ('regardless of t') picks the reading that contradicts C#1.",
+   "reproduction": "1) POST /api/demo/seed. Current timeline for web-01 STATUS is healthy [Jan 1, Mar 1), degraded [Mar 1, Apr 1), healthy [Apr 1, \u221e) active. 2) POST /api/episodes {occurred_at:'2025-03-15T00:00:00Z', content:'web-01 status is healthy'}, meaning the late report says web-01 recovered on Mar 15. The response is action='noop' and no row changes. 3) GET /api/graph?as_of=2025-03-20T00:00:00Z still shows web-01 STATUS degraded. A simpler case: X HAS_IP 2 is active from Mar; a backdated Jan episode saying 'X has IP 2' is a no-op, and as_of=Feb shows no HAS_IP for X at all.",
+   "expected": "C#1: the backdated fact should adjust the timeline. For example, degraded becomes [Mar 1, Mar 15), and healthy is extended or inserted from Mar 15.",
+   "actual": "The episode is stored, but its fact is discarded. Time-travel shows a value that contradicts the newest evidence for that period.",
+   "spec_reference": "CLARIFICATIONS #1 (out-of-order support) vs SPEC \u00a74.2 R0"
+  },
+  {
+   "id": "F3",
+   "severity": "low",
+   "category": "ui_ingest / spec_contradiction",
+   "title": "The ingest drawer's example retraction uses a syntax the extractor ignores",
+   "location": "web/src/IngestDrawer.tsx:77 (textarea placeholder)",
+   "description": "The placeholder suggests 'RETRACT: web-01 DEPENDS_ON db-01'. After the prefix is removed, 'web-01 DEPENDS_ON db-01' has no brackets or arrow, no pipes, and matches none of the natural-language patterns. parse_line (api/app/extractor.py:50-64) returns None and the line is logged as 'ignored'.",
+   "reproduction": "Open the ingest drawer and type the placeholder text exactly: 'RETRACT: web-01 DEPENDS_ON db-01'. Submit after loading the demo, where web-01 DEPENDS_ON db-02 is active (try the same with db-02). ingest-result shows data-retracted=0 and data-not-found=0, and nothing is retracted.",
+   "expected": "C#4 retraction statements use the structured syntax, e.g. 'RETRACT: web-01 | DEPENDS_ON | db-01'.",
+   "actual": "A user who copies the UI's own example retracts nothing, and the line is silently ignored.",
+   "spec_reference": "CLARIFICATIONS #3 and #4"
+  },
+  {
+   "id": "F4",
+   "severity": "low",
+   "category": "ui_time_travel_scrubber",
+   "title": "The as-of input silently cuts timestamps to milliseconds, so time-travel to a fact's exact valid_from can miss that fact",
+   "location": "web/src/time.ts:23 (Date.parse) and web/src/api.ts:104 (new Date(asOf).toISOString())",
+   "description": "as_of is held as epoch milliseconds. parseIso accepts any number of fractional digits but drops everything past the millisecond, and fetchGraph sends a millisecond ISO string. The API stores microseconds: occurred_at defaults to datetime.now() with microseconds, and SPEC \u00a72.1 requires microsecond round-trip. The lineage inspector shows the full microsecond value (formatIso keeps the fraction).",
+   "reproduction": "Ingest 'X has IP 1' with occurred_at 2025-05-01T00:00:00Z, then 'X has IP 2' from the drawer with occurred_at left blank. Its valid_from is, say, 2026-11-17T10:00:00.123456Z, shown that way in the inspector. Type that exact value into as-of-input and press Enter. The request uses as_of=\u202610:00:00.123Z, which is earlier than .123456. The graph shows HAS_IP 1 as live and does not show HAS_IP 2 as live.",
+   "expected": "Applying a timestamp the inspector displayed should query that instant (SPEC \u00a72.1: microseconds must round-trip).",
+   "actual": "The query runs at a different, earlier instant, with no warning.",
+   "spec_reference": "SPEC \u00a72.1, \u00a76 (as-of-input applies the entered ISO 8601 as as_of)"
+  }
+ ],
+ "codex-hh": [
+  {
+   "id": "F001",
+   "severity": "high",
+   "area": "Neo4j/Postgres sync",
+   "title": "A PostgreSQL rollback after Neo4j commits leaves a permanently inconsistent graph",
+   "location": "api/app/engine.py:99-102; api/app/engine.py:131-145",
+   "repro": "Code-traced sequence, not executed: ingest host | STATUS | up at 2025-01-01T00:00:00Z. Ingest host | STATUS | down at 2025-02-01T00:00:00Z, then terminate the API process after transaction.commit() at line 99 completes but before the enclosing PostgreSQL transaction commits. Restart the API and compare GET /api/facts?subject=host with GET /api/graph?as_of=2025-03-01T00:00:00Z. Reasserting host | STATUS | up does not repair the discrepancy.",
+   "expected": "The graph must reflect the PostgreSQL source-of-truth ledger. After the SQL transaction rolls back, up should remain open and down should not appear. A failed cross-store mutation must be recovered or reconciled before inconsistent graph data is served.",
+   "actual": "Neo4j has already committed the superseded up relationship and the new down relationship, while PostgreSQL rolls both changes back. Startup performs schema initialization without reconciling the projection, and graph reads trust Neo4j once the SQL lock is released. Reasserting up returns noop with an empty touched set, so it also skips projection. The graph therefore continues returning a fact absent from the ledger, whose lineage lookup returns 404."
+  },
+  {
+   "id": "F002",
+   "severity": "medium",
+   "area": "Time-travel scrubber",
+   "title": "Entering a microsecond timestamp silently queries an earlier instant",
+   "location": "web/src/time.ts:23-28; web/src/api.ts:102-104",
+   "repro": "Code-traced sequence, not executed: ingest host | STATUS | up at 2025-01-01T00:00:00Z, then host | STATUS | down at 2025-01-01T00:00:00.123456Z. Enter 2025-01-01T00:00:00.123456Z in the UI's as-of input and press Enter.",
+   "expected": "The time-travel query should preserve the entered instant and show down at its inclusive valid_from boundary, consistent with HANDOFF.md section 3.3 and the API's supported microsecond precision.",
+   "actual": "parseIso accepts the fractional timestamp but converts it through Date.parse to millisecond precision. fetchGraph then serializes it as 2025-01-01T00:00:00.123Z. The request is 456 microseconds earlier than the requested boundary, so the canvas shows up instead of down. Distinct transitions within one millisecond cannot be selected accurately through the text input."
+  }
+ ]
+}

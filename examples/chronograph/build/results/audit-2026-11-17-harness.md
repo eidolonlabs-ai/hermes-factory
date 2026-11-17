@@ -1,5 +1,21 @@
 # ChronoGraph audit: hermes-agent-harness build (2026-11-17)
 
+**Comparable result (stripped snapshot, same treatment as the forge audit): 4 unique findings,
+1 high by Codex's rating.** Two audit rounds were run:
+
+| Round | Snapshot | Unique | High |
+|---|---|---|---|
+| 1 | full repo, including `docs/reviews/` and `RFI.md` (not comparable) | 4 | 1 |
+| 2 | **stripped** of `docs/reviews/`, `RFI.md`, `.harness/`, `inputs/` (comparable to forge's) | 4 | 1 |
+| both | union | 5 | 1 |
+
+Round 2 found the same dual-write, backdated re-assertion and microsecond issues, dropped the
+time-travel colouring finding, and added one confirmed low: the ingest drawer's example
+`RETRACT: web-01 DEPENDS_ON db-01` uses a syntax the extractor ignores (live: 0 triples).
+Raw output: `findings-2026-11-17-harness-stripped.json`.
+
+## Round 1 (full repo)
+
 Same cold, read-only audit as `audit-2026-11-16.md` (same `prompt.md` and `schema.json`), run
 by Codex (high) and Claude Opus (high) on a clean clone of the harness build at `0d50bd6`
 (after M5). The requirement files were placed at the repo root as in the earlier audits.
