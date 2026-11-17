@@ -38,6 +38,14 @@ answers each one outside the agent:
 Cross-vendor review matters: in the ChronoGraph benchmark, single-vendor audits missed bugs in
 their own vendor's code that the other vendor found. See [`examples/chronograph`](examples/chronograph).
 
+**ChronoGraph benchmark** (same 28-line handoff + 4 answers, same read-only cross-vendor audit):
+
+| Build | Unique audit findings (high) | Human interventions |
+|---|---|---|
+| Antigravity | 13 (2) | 8 |
+| Hermes forge (predecessor) | 7 (0) | 2 (+1) |
+| **hermes-agent-harness** | **4 (1)** | 6, 3 of them harness bugs found and fixed during this first run |
+
 ## Requirements
 
 - macOS or Linux, Python 3.11+, git
@@ -79,6 +87,7 @@ harness run --milestone M0 --role build --engine claude --review-engine codex
 harness freeze                                        # after you approve .harness/plan.json
 harness pipeline                                      # M1..Mn until a checkpoint / red / budget
 harness status
+harness preview                                       # app with published ports; --down to stop
 ```
 
 For overnight runs or phone intake, use kanban mode: one card per milestone for the

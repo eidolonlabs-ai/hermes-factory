@@ -1,0 +1,56 @@
+{
+ "claude-hh": [
+  {
+   "id": "F1",
+   "severity": "medium",
+   "area": "conflict-engine",
+   "title": "A backdated episode that repeats the current active object is ignored, so its history is lost (contradicts Clarification 1)",
+   "location": "api/app/engine.py:31,38-39 (the active-object no-op check runs before the functional covered/newer logic at :44-59)",
+   "repro": "After POST /api/demo/seed (web-01 STATUS: healthy [Jan 1\u2013Mar 1), degraded [Mar 1\u2013Apr 1), healthy from Apr 1, active), POST /api/episodes {occurred_at:'2025-03-15T00:00:00Z', content:'web-01 status is healthy'}. A second case: POST {occurred_at:'2024-12-01T00:00:00Z', content:'Alice is assigned to db-01'} while that fact has been active since 2025-04-01.",
+   "expected": "Clarification 1 says a backdated fact is inserted as historic and overlapping intervals are split. 'degraded' should end at 2025-03-15 and 'healthy' should hold from 03-15. GET /api/graph?as_of=2025-03-20 should show healthy, and as_of=2024-12-15 should show Alice ASSIGNED_TO db-01.",
+   "actual": "Both calls return action 'noop' because the object matches the active row, and the timestamp is never checked. as_of=2025-03-20 still shows 'degraded', and as_of=2024-12-15 shows no assignment. The episode's fact is discarded."
+  },
+  {
+   "id": "F2",
+   "severity": "medium",
+   "area": "neo4j-postgres-sync",
+   "title": "Neo4j is committed before Postgres, and nothing repairs the gap if the Postgres commit fails",
+   "location": "api/app/engine.py:85-102 (Neo4j transaction.commit() runs inside the still-open Postgres transaction from ingest/seed_demo/retract_fact); api/app/main.py:27-60 (no resync at startup)",
+   "repro": "POST /api/episodes 'x | LOCATION | B' while x LOCATION A is active. After transaction.commit() at engine.py:99, the Postgres transaction is lost before it commits (API process killed or restarted, or the Postgres backend terminated or the connection dropped). The same window exists in /api/demo/seed (reset=True) and in /facts/{id}/retract.",
+   "expected": "Postgres is the source of truth, so the Neo4j projection (which /api/graph reads exclusively) should never show ledger state that was never committed, or it should be reconciled afterwards.",
+   "actual": "Postgres rolls back: A stays active and fact B does not exist. Neo4j keeps a FACT edge for B and shows A as superseded. /api/graph serves this graph indefinitely; clicking the B edge gives a 404 in the lineage inspector. Ids are never reused, and neo4j_synced_at is never used to resync. A failed seed leaves Neo4j holding the new demo graph while Postgres keeps the old data."
+  },
+  {
+   "id": "F3",
+   "severity": "low",
+   "area": "ui",
+   "title": "The time-travel view colours edges that were in force at as_of by their current status, so they look superseded",
+   "location": "web/src/GraphCanvas.tsx:200,210,238 (colour, data-status and arrow marker come from edge.status); api/app/query_routes.py:40-47",
+   "repro": "Load the demo, then type 2025-02-15T00:00:00Z into the scrubber. web-01 STATUS healthy and Alice CURRENT_ROLE SRE are the facts in force at that time (ghost=false).",
+   "expected": "Facts in force at the scrubbed time should be drawn as in force (blue, solid), per the legend '\u2014 active'.",
+   "actual": "They are drawn grey, with aria/title '(superseded)' and the superseded arrow, because the ledger's current status is used. In live mode, a fact whose replacement has a future-dated valid_from also shows grey/'superseded' even though it is still the value in effect now."
+  }
+ ],
+ "codex-hh": [
+  {
+   "id": "F1",
+   "severity": "high",
+   "area": "neo4j-postgres-sync",
+   "title": "A failed PostgreSQL transaction can leave permanently committed changes in Neo4j",
+   "location": "api/app/engine.py:99-102; api/app/engine.py:131-145; api/app/main.py:47-60",
+   "repro": "Code-traced sequence: ingest `server | STATUS | healthy` at `2025-01-01T00:00:00Z`. Ingest `server | STATUS | degraded` at `2025-02-01T00:00:00Z`, then terminate the API process after the Neo4j transaction commits at engine.py:99 but before the surrounding PostgreSQL transaction commits. Restart the API with both databases preserved, then query `/api/facts?subject=server` and `/api/graph?as_of=2025-03-01T00:00:00Z`.",
+   "expected": "After recovery, Neo4j must reflect the committed PostgreSQL ledger. The rolled-back assertion must not remain visible, and the original healthy fact must remain open in both stores, preserving HANDOFF.md's atomic conflict-resolution requirement.",
+   "actual": "PostgreSQL rolls back the degraded fact and the healthy fact's supersession, but Neo4j retains both changes. The facts endpoint reports healthy while the graph reports degraded with a fact ID absent from PostgreSQL. Startup only initializes the schema and constraint; there is no compensation or reconciliation. Graph-read locks wait for transactions but cannot repair this persistent divergence. Manual retraction and demo reset use the same vulnerable projection path."
+  },
+  {
+   "id": "F2",
+   "severity": "medium",
+   "area": "ui",
+   "title": "The scrubber silently truncates microseconds and queries the wrong conflict interval",
+   "location": "web/src/time.ts:23-28; web/src/TemporalScrubber.tsx:18-25; web/src/api.ts:102-104",
+   "repro": "Ingest `server | STATUS | healthy` at `2025-01-01T00:00:00Z`, followed by `server | STATUS | degraded` at `2025-02-01T00:00:00.123456Z`. Enter `2025-02-01T00:00:00.123456Z` into the UI's as-of input and press Enter.",
+   "expected": "The graph should query the entered instant exactly and show degraded: the new fact begins at that instant, and the healthy interval ends exclusively there. The API accepts and preserves this timestamp precision.",
+   "actual": "`parseIso` converts the input through `Date.parse`, losing the sub-millisecond digits. `fetchGraph` then sends `2025-02-01T00:00:00.123Z`, which is 456 microseconds before the requested boundary, so the canvas shows healthy instead. Copying an exact boundary displayed by the lineage inspector into the scrubber therefore selects the wrong temporal state."
+  }
+ ]
+}
