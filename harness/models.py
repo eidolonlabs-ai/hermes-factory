@@ -24,7 +24,7 @@ DEFAULT_CONFIG: dict = {
     "roles": {"architect": "claude", "backend": "codex", "ui": "claude", "review": "cross"},
     "engines": {"claude": {"model": "opus", "max_usd_per_run": 15},
                 "codex": {"effort": "high"},
-                "hermes": {"profile": "harness-worker"}},
+                "hermes": {"profile": "harness-coder"}},
     "budgets": {"attempts": 3, "engine_timeout_min": 90, "run_timeout_min": 240,
                 "review_rounds": 2, "project_max_usd": 150},
     "protected": ["tests/", "scripts/verify.sh", "contracts/", ".harness/", "AGENTS.md"],

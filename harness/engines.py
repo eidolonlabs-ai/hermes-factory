@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import os
 import shutil
 import sys
@@ -59,7 +60,7 @@ def base_env(extra: dict | None = None) -> dict:
 def claude_settings(run_dir: Path) -> Path:
     """Per-run settings JSON: PreToolUse guard hook. Lives outside the repo."""
     settings = {"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [
-        {"type": "command", "command": "python3 -m harness.hooks_adapters claude"}]}]}}
+        {"type": "command", "command": f"{shlex.quote(sys.executable)} -m harness.hooks_adapters claude"}]}]}}
     p = Path(run_dir) / "claude-settings.json"
     p.write_text(json.dumps(settings, indent=2))
     return p
@@ -67,17 +68,21 @@ def claude_settings(run_dir: Path) -> Path:
 
 def build_invocation(engine: str, *, role: str, worktree: Path, prompt: str, prompt_file: Path,
                      run_dir: Path, cfg: dict, frozen: list[str], attempt: int = 1,
-                     read_only: bool = False, schema: dict | None = None) -> Invocation:
+                     read_only: bool = False, schema: dict | None = None,
+                     milestone: str = "") -> Invocation:
     """role: build | review | intake. read_only is for intake. Prompt travels via stdin or
     argv depending on the engine's CLI."""
     run_dir = Path(run_dir)
     ecfg = cfg.get("engines", {}).get(engine, {})
     last = run_dir / f"engine-{role}-{attempt}.last.txt"
-    frozen_file = run_dir / "frozen.txt"
-    frozen_file.write_text("\n".join(frozen) + ("\n" if frozen else ""))
+    # JSON list: read by harness.hooks_adapters (the in-engine guard). Must stay JSON, since an
+    # unreadable frozen file makes the guard fail closed and block every tool call.
+    frozen_file = run_dir / "frozen.json"
+    frozen_file.write_text(json.dumps(list(frozen)))
     env = base_env({"HARNESS_ROOT": str(worktree), "HARNESS_FROZEN_FILE": str(frozen_file),
                     "HARNESS_ROLE": role, "HARNESS_ATTEMPT": str(attempt),
-                    "HARNESS_LAST_MESSAGE": str(last), "HARNESS_RUN_DIR": str(run_dir)})
+                    "HARNESS_LAST_MESSAGE": str(last), "HARNESS_RUN_DIR": str(run_dir),
+                    "HARNESS_MILESTONE": milestone})
     schema_file = None
     if schema is not None:
         schema_file = run_dir / "schema.json"
@@ -113,8 +118,10 @@ def build_invocation(engine: str, *, role: str, worktree: Path, prompt: str, pro
     if engine == "hermes":
         if read_only:
             raise ValueError("hermes engine has no read-only mode")
-        return Invocation(["hermes", "-p", ecfg.get("profile", "harness-worker"), "-z", prompt,
-                           "--yolo"], env, "", last)
+        # --accept-hooks: the harness-coder profile's guard/verify hooks run without the
+        # interactive first-use consent prompt (only in this dedicated profile).
+        return Invocation(["hermes", "-p", ecfg.get("profile", "harness-coder"), "-z", prompt,
+                           "--yolo", "--accept-hooks"], env, "", last)
     if engine == "agy":
         if read_only:
             raise ValueError("agy engine has no read-only mode")

@@ -104,10 +104,33 @@ class EngineTests(CoreCase):
         self.assertEqual(inv.env["ENABLE_CLAUDEAI_MCP_SERVERS"], "false")
         self.assertEqual(inv.env["HARNESS_ROOT"], str(self.tmp))
         self.assertTrue(os.path.isfile(inv.env["HARNESS_FROZEN_FILE"]))
+        # the in-engine guard must be able to read the frozen file (else it fails closed)
+        from harness import hooks_adapters
+        self.assertIsInstance(hooks_adapters._frozen(str(self.tmp), inv.env), list)
         settings = json.loads(__import__("pathlib").Path(a[a.index("--settings") + 1]).read_text())
         self.assertEqual(settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
-                         "python3 -m harness.hooks_adapters claude")
+                         f"{sys.executable} -m harness.hooks_adapters claude")
         self.assertEqual(inv.stdin_text, "P")
+
+    def test_claude_hook_end_to_end_with_invocation_env(self):
+        """The exact hook command from the per-run settings blocks frozen writes, allows others."""
+        import subprocess as sp
+        d = self.tmp / "run2"; d.mkdir()
+        cfg = models.validate_config({"project": "x"})
+        inv = engines.build_invocation("claude", role="build", worktree=self.tmp, prompt="P",
+                                       prompt_file=d / "p.md", run_dir=d, cfg=cfg,
+                                       frozen=["tests/test_a.py"])
+        a = inv.argv
+        cmd = json.loads(__import__("pathlib").Path(a[a.index("--settings") + 1]).read_text())[
+            "hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        def call(tool, inp):
+            return sp.run(cmd, shell=True, input=json.dumps({"tool_name": tool, "tool_input": inp,
+                                                              "cwd": str(self.tmp)}),
+                          capture_output=True, text=True, env=inv.env)
+        r = call("Write", {"file_path": str(self.tmp / "tests/test_a.py"), "content": "x"})
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertEqual(call("Write", {"file_path": str(self.tmp / "src/a.py"), "content": "x"}).returncode, 0)
+        self.assertEqual(call("Bash", {"command": "git push origin main"}).returncode, 2)
 
     def test_other_engines_and_fake(self):
         d = self.tmp / "run"; d.mkdir()
@@ -115,7 +138,7 @@ class EngineTests(CoreCase):
         kw = dict(role="build", worktree=self.tmp, prompt="P", prompt_file=d / "p.md", run_dir=d,
                   cfg=cfg, frozen=[])
         self.assertEqual(engines.build_invocation("hermes", **kw).argv,
-                         ["hermes", "-p", "harness-worker", "-z", "P", "--yolo"])
+                         ["hermes", "-p", "harness-coder", "-z", "P", "--yolo", "--accept-hooks"])
         self.assertEqual(engines.build_invocation("agy", **kw).argv,
                          ["agy", "-p", "P", "--dangerously-skip-permissions"])
         c = engines.build_invocation("codex", **kw).argv

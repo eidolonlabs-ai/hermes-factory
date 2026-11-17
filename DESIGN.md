@@ -32,10 +32,11 @@ build and review. Whether a milestone is done is decided by exit codes, never by
 
 ```
 ┌ Hermes (orchestrator) — your chat session, a kanban card, or a cron job
-│   skills: harness (driver), harness-worker (kanban mode)
+│   skills: harness (driver), harness-worker (kanban mode); profiles harness-worker
+│   (kanban card operator, never codes) and harness-coder (Hermes as a coding engine)
 ├ harness CLI (Python 3.11+ stdlib) — deterministic: intake, plan, freeze, run, gate, review,
 │   pipeline, audit, status, note. State in ~/.hermes/harness/ (outside every repo)
-├ Engines — claude -p · codex exec · hermes -p harness-worker -z · agy -p (optional)
+├ Engines — claude -p · codex exec · hermes -p harness-coder -z · agy -p (optional)
 └ Project — AGENTS.md (+CLAUDE.md link), SPEC.md, inputs/, scripts/verify.sh, tests/,
     .harness/config.json, .harness/plan.json
 ```
@@ -60,7 +61,7 @@ hermes-agent-harness/
 ├─ hermes/
 │   ├─ skills/{harness,harness-worker}/SKILL.md
 │   ├─ hooks/{guard.py,verify_gate.py}       ← Hermes shell hooks
-│   └─ profiles/harness-worker.yaml          ← config fragment (hooks, toolsets)
+│   └─ profiles/{harness-coder,harness-worker}/   ← SOUL.md + config fragments (hooks)
 ├─ contract/                       ← shared with sibling repos
 │   └─ guard-cases.json  plan.schema.json  result.schema.json
 ├─ examples/chronograph/           ← intake + build benchmarks
@@ -107,7 +108,7 @@ Every human touch is logged with `harness note` (intervention count).
 |---|---|---|---|
 | Codex | `codex exec -C <wt> --sandbox workspace-write -c approval_policy="never" --json --output-schema F` | Codex sandbox | sandbox + post-hoc checks |
 | Claude | `claude -p --dangerously-skip-permissions --strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings <run.json> --max-budget-usd N` | bypass, worktree only | PreToolUse guard injected per run via `--settings` (no files in the repo) |
-| Hermes | `hermes -p harness-worker -z PROMPT --yolo`, cwd = worktree | bypass, worktree only | profile shell hooks: `pre_tool_call` guard (`fail_closed: true`), `pre_verify` gate |
+| Hermes | `hermes -p harness-coder -z PROMPT --yolo --accept-hooks`, cwd = worktree | bypass, worktree only | profile shell hooks: `pre_tool_call` guard (`fail_closed: true`), `pre_verify` gate |
 | Antigravity (optional) | `agy -p --dangerously-skip-permissions` | bypass, worktree only | post-hoc checks only |
 
 Review runs use read-only modes where they exist (`codex review --base`, `--sandbox read-only`).
@@ -126,7 +127,7 @@ validates the JSON itself either way.
   "roles": {"architect": "claude", "backend": "codex", "ui": "claude", "review": "cross"},
   "engines": {"claude": {"model": "opus", "max_usd_per_run": 15},
               "codex": {"effort": "high"},
-              "hermes": {"profile": "harness-worker"}},
+              "hermes": {"profile": "harness-coder"}},
   "budgets": {"attempts": 3, "engine_timeout_min": 90, "run_timeout_min": 240,
               "review_rounds": 2, "project_max_usd": 150},
   "protected": ["tests/", "scripts/verify.sh", "contracts/", ".harness/", "AGENTS.md"],
@@ -180,9 +181,9 @@ known-bad commands and writes to protected paths. In bypass mode an agent can st
 anything you can, including the holdout store — holdouts are a discipline that keeps them out
 of the repo, prompts and context, not a secret. Engines in containers are a later option.
 
-Hermes shell hooks need one-time consent per `(event, command)`; `install.sh` sets
-`hooks_auto_accept` only in the dedicated `harness-worker` profile, never in your default
-profile.
+Hermes shell hooks need one-time consent per `(event, command)`. The harness runs the
+coding profile with `--accept-hooks`, and the hooks live only in the dedicated `harness-coder`
+profile, never in your default profile.
 
 ## 10. harness CLI
 

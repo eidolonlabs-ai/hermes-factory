@@ -273,6 +273,23 @@ class ComposeSession:
         return False
 
 
+def down_project(name: str, cwd: str, log: str | Path, timeout_s: float = 180) -> int:
+    """`docker compose -p NAME down -v --remove-orphans` for one named project only.
+
+    Compose v2 finds the project's resources by label, so no compose file is needed.
+    Returns the exit code (124 on timeout). Output goes to `log`.
+    """
+    Path(log).parent.mkdir(parents=True, exist_ok=True)
+    with open(log, "ab") as fh:
+        try:
+            r = subprocess.run(["docker", "compose", "-p", name, "down", "-v", "--remove-orphans"],
+                               cwd=cwd, stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT,
+                               timeout=timeout_s)
+            return r.returncode
+        except subprocess.TimeoutExpired:
+            return 124
+
+
 def teardown_check(session: ComposeSession) -> Check:
     """Fail if our teardown failed or a foreign container disappeared during the run.
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import os
 import subprocess
 import sys
@@ -40,6 +41,32 @@ def resolve(args) -> tuple[Path, str]:
 
 
 # ---------------------------------------------------------------- commands
+TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "template"
+
+
+def _copy_template(repo: Path, project: str, host: bool) -> list[str]:
+    """Copy template/ files that do not exist yet. Never overwrites. Returns added paths."""
+    added = []
+    if not TEMPLATE_DIR.is_dir():
+        return added
+    for src in sorted(TEMPLATE_DIR.rglob("*")):
+        rel = src.relative_to(TEMPLATE_DIR)
+        if src.is_dir() or rel.as_posix() == ".harness/config.json":
+            continue
+        if host and rel.name in ("compose.yaml", "compose.preview.yaml"):
+            continue
+        dst = repo / rel
+        if dst.exists() or dst.is_symlink():
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if src.is_symlink():
+            os.symlink(os.readlink(src), dst)
+        else:
+            shutil.copy2(src, dst)
+        added.append(rel.as_posix())
+    return added
+
+
 def cmd_init(a) -> int:
     repo = Path(a.repo or os.getcwd()).expanduser().resolve()
     project = a.project or repo.name.replace(" ", "-")
@@ -50,6 +77,7 @@ def cmd_init(a) -> int:
         raw["stack"] = {"type": "host", "reason": a.reason}
     cfg_path = repo / ".harness" / "config.json"
     validate_config(raw)
+    copied = _copy_template(repo, project, a.stack == "host")
     if not cfg_path.exists():
         cfg_path.parent.mkdir(parents=True, exist_ok=True)
         full = {k: v for k, v in DEFAULT_CONFIG.items()}
@@ -57,12 +85,12 @@ def cmd_init(a) -> int:
         cfg_path.write_text(json.dumps(full, indent=2) + "\n")
     is_git = subprocess.run(["git", "-C", str(repo), "rev-parse"], capture_output=True).returncode == 0
     if is_git and a.commit:
-        workspace.git(repo, "add", ".harness/config.json")
+        workspace.git(repo, "add", ".harness/config.json", *copied)
         if workspace.git(repo, "diff", "--cached", "--name-only"):
             workspace.git(repo, "commit", "-q", "-m", "chore(harness): init config")
     state.init_project(project, str(repo))
     out({"project": project, "repo": str(repo), "config": str(cfg_path), "home": str(state.home()),
-         "git": is_git})
+         "git": is_git, "template_files_added": copied})
     return 0
 
 
@@ -94,7 +122,8 @@ def cmd_doctor(a) -> int:
             add(f"module:{m}", True)
         except ImportError as e:
             add(f"module:{m}", False, str(e))
-    required = {"python>=3.11", "git", "home writable"}
+    # Docker + compose are required (CONTRACT §4) unless every registered project opted out.
+    required = {"python>=3.11", "git", "home writable", "docker"}
     ok = all(c["ok"] for c in checks if c["check"] in required)
     out({"ok": ok, "checks": checks})
     return 0 if ok else 1

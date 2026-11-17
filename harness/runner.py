@@ -38,6 +38,17 @@ def write_status(rdir: Path, **kw) -> None:
     write_json(p, s)
 
 
+def _down_engine_stack(c) -> None:
+    """Tear down the compose project the engine used for its own test runs (if any)."""
+    if c.cfg["stack"]["type"] != "compose":
+        return
+    try:
+        from . import compose
+        compose.down_project(c.compose_proj, str(c.ws.path), c.rdir / "engine-stack-down.log")
+    except Exception:  # best effort; the gate uses its own, separate project
+        pass
+
+
 def compose_project(project: str, run_id: str) -> str:
     try:
         from . import compose
@@ -87,12 +98,13 @@ def _phase(c: _Ctx, role: str, engine: str, max_attempts: int, feedback: str) ->
                                    compose_proj=c.compose_proj))
         inv = engines.build_invocation(engine, role=role, worktree=c.ws.path, prompt=pf.read_text(),
                                        prompt_file=pf, run_dir=c.rdir, cfg=c.cfg, frozen=c.frozen,
-                                       attempt=n)
+                                       attempt=n, milestone=c.ms.get("verify_as") or c.ms["id"])
         inv.env["COMPOSE_PROJECT_NAME"] = c.compose_proj
         remaining = max(1.0, c.deadline - time.monotonic())
         res = run_process(inv.argv, c.ws.path,
                           min(c.cfg["budgets"]["engine_timeout_min"] * 60, remaining),
                           c.rdir / f"engine-{role}-{n}.log", inv.stdin_text, inv.env)
+        _down_engine_stack(c)  # agents boot stacks while working; never leave them running
         info = engines.parse_output(engine, Path(res.log), inv.last_message)
         info.update(rc=res.returncode, timed_out=res.timed_out, seconds=int(res.duration_s))
         c.cost += float(info.get("cost_usd") or 0)
