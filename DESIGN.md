@@ -69,7 +69,7 @@ agent-harness/
 ├─ platforms/
 │   ├─ claude/       settings.json hooks, subagents, /milestone command, PLAYBOOK.md
 │   ├─ codex/        hooks.json, milestone-loop.sh, PLAYBOOK.md
-│   ├─ antigravity/  rules + /goal and /swarm prompt pack, PLAYBOOK.md   (beta)
+│   ├─ antigravity/  plugin (hooks.json, rules, skills), PLAYBOOK.md
 │   └─ hermes/       skills, shell-hook config, kanban mode, PLAYBOOK.md
 ├─ examples/chronograph/                    ← HANDOFF + clarifications, benchmark notes
 ├─ bootstrap-harness.sh                      ← apply to a repo: --platforms claude,codex,...
@@ -213,7 +213,7 @@ commands.
 | Antigravity | `agy -p --dangerously-skip-permissions --mode auto` | plugin `hooks.json` PreToolUse (`{decision: deny}`) | plugin Stop (`{decision: continue}`) | `/goal`, `/swarm`, `/teamwork` |
 
 In-agent hooks are a convenience (catch problems early, save retries). **The external gate is
-the authority**, which is why Antigravity can participate before its hooks are verified.
+the authority**: a missing or broken hook costs retries, never correctness.
 
 To verify before claiming support: Codex repo-level hooks under headless `exec` (trust
 requirement; likely `--dangerously-bypass-hook-trust`).
@@ -258,7 +258,7 @@ orchestrator what happened. Run it in the background and get notified on exit.
 1. Self-tests with fake engines: worktree create/merge/keep, frozen tamper, holdout copy +
    scrub + cleanup, retries, budget stop, compose policy accept/reject, teardown snapshot.
 2. Live hook checks with tiny prompts: Claude PreToolUse + Stop, Codex PreToolUse (headless
-   trust), Hermes pre_tool_call + pre_verify. Antigravity marked beta.
+   trust), Hermes pre_tool_call + pre_verify, Antigravity plugin PreToolUse + Stop.
 3. One full live example run (`examples/chronograph/build`) with one orchestrator.
 4. Ported parity suites: 39 agy-software-factory tests, 33 codex-harness-template tests.
 
