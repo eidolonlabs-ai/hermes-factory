@@ -51,10 +51,11 @@ code yourself and never decide "done" yourself. Rules: `CONTRACT.md`; design: `D
    lines (what passed, what stopped, why). For a red gate show the failing check and the log
    tail path, not whole logs. Continue with `harness pipeline` when the user agrees; log every
    human decision with `harness note`.
-8. **Final**: run `harness gate --milestone <last>` yourself; `harness preview` and check the
-   UI with the browser tools (desktop 1440x900 and mobile 390x844); optionally a cross-vendor
-   audit (`templates/` in the repo's `examples/chronograph/build/results/prompt.md`). Report
-   wall time, attempts, interventions, and open RFIs.
+8. **Final**: run `harness gate --milestone <last>` yourself (background + notify);
+   `harness preview` and check the UI with the browser tools (desktop 1440x900 and mobile
+   390x844); `harness preview --down` when the user is done. Optionally a cross-vendor audit:
+   `templates/audit/` + `references/benchmarking.md`. Report wall time, attempts,
+   interventions (user decisions vs harness bugs), and open RFIs.
 9. **Follow-ups** (plan is frozen): `harness plan add M6 --goal "..." --verify-as M5 --allowed-path api/`
    then `harness pipeline --next`.
 
@@ -72,6 +73,14 @@ block `{"repo": "/abs/path", "milestone": "M3"}`. Chain cards with parents so th
   main, `harness freeze --force`, `harness note`.
 - `stack.type: host` projects report "not isolated" in every gate; say so in reports.
 - Expired Claude/Codex logins fail every attempt instantly; `harness doctor` first.
+- A run that goes red for a reason the builder cannot fix (harness bug, wrong frozen file):
+  stop the pipeline, fix the cause, then resume with `harness run --milestone M ...
+  --feedback-file F` telling the engine to `git merge` the red run's branch first, so no
+  finished work is redone. Log it with `harness note`.
+- If `browser_exec` screenshots time out, use headless Chrome
+  (`--headless=new --window-size=1440,900 --virtual-time-budget=8000 --screenshot=out.png URL`).
+- Benchmarks and audits: follow `references/benchmarking.md` exactly (same inputs, strip
+  process artifacts like `docs/reviews` and `RFI.md` from every audited clone).
 
 ## Verification
 `harness gate --milestone <last>` exits 0 and its JSON shows every check PASS (holdout/audit

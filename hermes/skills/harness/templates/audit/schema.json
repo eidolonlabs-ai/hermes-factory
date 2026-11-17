@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["findings"],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "severity", "area", "title", "location", "repro", "expected", "actual"],
+        "properties": {
+          "id": {"type": "string"},
+          "severity": {"type": "string", "enum": ["high", "medium", "low"]},
+          "area": {"type": "string"},
+          "title": {"type": "string"},
+          "location": {"type": "string"},
+          "repro": {"type": "string"},
+          "expected": {"type": "string"},
+          "actual": {"type": "string"}
+        }
+      }
+    }
+  }
+}
