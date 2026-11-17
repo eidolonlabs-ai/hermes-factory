@@ -314,6 +314,20 @@ def cmd_note(a) -> int:
     return 0
 
 
+def cmd_preview(a) -> int:
+    repo, project = resolve(a)
+    cfg = load_config(repo)
+    if cfg["stack"]["type"] != "compose":
+        return fail("preview needs stack.type compose")
+    from . import compose
+    log = state.runs_dir(project) / "preview.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    res = compose.preview(str(repo), cfg["stack"].get("file", "compose.yaml"), project,
+                          down=a.down, log=log)
+    out(res)
+    return 0 if res.get("ok", res.get("down")) else 1
+
+
 # ---------------------------------------------------------------- parser
 def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
@@ -367,6 +381,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--acceptance", action="append")
     p.add_argument("--allowed-path", action="append")
     p.add_argument("--checkpoint", action="store_true")
+    p = add("preview", cmd_preview, help="boot the merged app with published ports (own project)")
+    p.add_argument("--down", action="store_true", help="tear the preview down")
     add("status", cmd_status)
     p = add("note", cmd_note)
     p.add_argument("text")

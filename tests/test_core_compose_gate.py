@@ -88,6 +88,28 @@ class ComposeGateTest(CoreCase):
         self.assertEqual(checks["verify"]["status"], "NOT_RUN")
         self.assertEqual(self.leftover(), [])
 
+    def test_preview_publishes_ports_in_own_project_and_tears_down(self):
+        r = self.make_compose_repo()
+        (r / "compose.preview.yaml").write_text("services:\n  db:\n    ports: [\"5432\"]\n")
+        res = compose.preview(str(r), "compose.yaml", "demo", log=self.tmp / "preview.log", timeout_s=180)
+        try:
+            self.assertTrue(res["ok"], res)
+            self.assertEqual(res["project"], "demo-preview")
+            self.assertTrue(res["urls"]["db"][0].startswith("http://localhost:"), res["urls"])
+        finally:
+            down = compose.preview(str(r), "compose.yaml", "demo", down=True, log=self.tmp / "preview.log")
+        self.assertTrue(down["down"])
+        self.assertEqual(self.leftover(), [])
+
+    def test_preview_still_rejects_container_name(self):
+        bad = COMPOSE.replace("    image: postgres:16-alpine\n    environment: {POSTGRES_PASSWORD: pw}",
+                              "    image: postgres:16-alpine\n    container_name: fixed\n"
+                              "    environment: {POSTGRES_PASSWORD: pw}", 1)
+        r = self.make_compose_repo(bad)
+        res = compose.preview(str(r), "compose.yaml", "demo", log=self.tmp / "preview.log")
+        self.assertFalse(res["ok"])
+        self.assertTrue(any("container_name" in v for v in res["violations"]), res)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -275,6 +275,58 @@ class ComposeSession:
         return False
 
 
+def published_ports(name: str, cwd: str, timeout_s: float = 30) -> dict[str, list[str]]:
+    """{service: ["http://localhost:PORT (-> container port)", ...]} for one compose project."""
+    r = subprocess.run(["docker", "compose", "-p", name, "ps", "--format", "json"], cwd=cwd,
+                       capture_output=True, text=True, timeout=timeout_s)
+    out: dict[str, list[str]] = {}
+    for line in r.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            items = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        for c in items if isinstance(items, list) else [items]:
+            for p in c.get("Publishers") or []:
+                if p.get("PublishedPort"):
+                    out.setdefault(c.get("Service", "?"), []).append(
+                        f"http://localhost:{p['PublishedPort']} (-> {p.get('TargetPort')}/{p.get('Protocol', 'tcp')})")
+    return {k: sorted(set(v)) for k, v in out.items()}
+
+
+def preview(repo: str, compose_file: str, project: str, overlay: str = "compose.preview.yaml",
+            down: bool = False, log: str | Path | None = None, timeout_s: float = 600) -> dict:
+    """Boot (or tear down) the merged app with published ports for humans / browser checks.
+
+    Uses its own project `<project>-preview` so it never collides with gate or engine stacks.
+    The base file must still pass the policy (no container_name, socket, privileged, ...);
+    published ports are allowed here only because this is not a gate.
+    """
+    name = project_name(project, "") + "-preview"
+    files = ["-f", compose_file] + (["-f", overlay] if (Path(repo) / overlay).exists() else [])
+    log = Path(log or Path(repo) / ".harness-preview.log")
+    if down:
+        rc = down_project(name, repo, log)
+        return {"project": name, "down": rc == 0}
+    cfg = load_config(repo, compose_file, name)
+    cfg.setdefault("name", name)
+    viol = policy_violations(cfg, repo, [], allow_published_ports=True)
+    if viol:
+        return {"project": name, "ok": False, "violations": viol}
+    with open(log, "ab") as fh:
+        try:
+            r = subprocess.run(["docker", "compose", "-p", name, *files, "up", "-d", "--build", "--wait",
+                                "--wait-timeout", str(int(timeout_s))], cwd=repo, stdin=subprocess.DEVNULL,
+                               stdout=fh, stderr=subprocess.STDOUT, timeout=timeout_s + 60)
+            rc = r.returncode
+        except subprocess.TimeoutExpired:
+            rc = 124
+    return {"project": name, "ok": rc == 0, "log": str(log), "urls": published_ports(name, repo),
+            "stop": "harness preview --down"}
+
+
 def down_project(name: str, cwd: str, log: str | Path, timeout_s: float = 180) -> int:
     """`docker compose -p NAME down -v --remove-orphans` for one named project only.
 
