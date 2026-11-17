@@ -1,292 +1,211 @@
-# agent-harness — Design
+# hermes-agent-harness — Design
 
-Status: v0.2 (approved direction). Supersedes `agy-software-factory` and
-`codex-harness-template`; feature-by-feature mapping in `docs/MIGRATION-MAP.md`.
+Status: v0.3. Hermes-native. Sibling repos: `agy-software-factory` (Antigravity),
+`codex-harness-template` (Codex). Rules shared between them live in `CONTRACT.md`.
 
 ## 1. Purpose
 
-A GitHub template repository that lets a solo developer hand a spec to an AI coding agent and
-let it build for hours, milestone by milestone, without clicking "approve" — while the
-decision "is this milestone done?" stays deterministic.
-
-It works with **Claude Code, OpenAI Codex CLI, Google Antigravity (`agy`) and Hermes Agent**.
-Any of them can be the orchestrator; any of them can be a builder or reviewer.
-
-**Principle: the harness owns the rules; each platform owns the orchestration.**
+A GitHub template repository for a solo developer: hand Hermes a spec, answer its questions,
+approve a plan, and let it build for hours, milestone by milestone, without clicking
+"approve". Hermes orchestrates; Claude Code, Codex, Hermes itself (and optionally Antigravity)
+build and review. Whether a milestone is done is decided by exit codes, never by an LLM saying so.
 
 ### Goals
-- One definition of done for every agent: frozen tests + `scripts/verify.sh <milestone>` +
-  sealed holdouts, judged by exit codes, never by an LLM's claim.
-- Unattended by default: work happens in disposable git worktrees. Engines run in their own
-  sandbox where they have one (Codex `workspace-write`, approval `never`); bypass flags are
-  used only for engines without a sandbox, and only inside harness worktrees. Humans touch the
-  run only at checkpoints.
-- Cross-vendor review by default: the agent that reviews a milestone is not the vendor that
-  built it.
-- Works for new projects ("Use this template") and existing repos (`bootstrap-harness.sh`).
-- Optional Docker Compose stack mode with safety rules for running the system under test.
+- One definition of done (`CONTRACT.md`): frozen tests + `scripts/verify.sh <milestone>` +
+  holdouts, judged by exit codes.
+- Unattended: each run happens in a disposable git worktree; engines run sandboxed where they
+  can, bypass flags only inside harness worktrees. You are interrupted only at checkpoints.
+- Cross-vendor review by default: the reviewer is not the vendor that built the milestone.
+- Uses Hermes natively: skills, profiles, shell hooks, kanban, cron, notifications,
+  `delegate_task`, `clarify`, the browser.
+- Works for new projects ("Use this template") and existing repos (`harness init`).
+- Optional Docker Compose stack mode with safety rules for the system under test.
 
 ### Non-goals
-- Team/org rollout, CI fan-out, DORA metrics, signed evidence or promotion pipelines.
-- A security sandbox. Isolation here protects against **mistakes**, not a malicious agent
-  (see §9).
-- Replacing each platform's native fan-out (subagents, swarms, kanban). Those stay native.
+- Team/org rollout, CI fan-out, signed evidence, promotion pipelines.
+- A security sandbox. Isolation protects against **mistakes**, not a malicious agent (§9).
+- Replacing Claude/Codex/Antigravity-native harnesses; those have their own repos.
 
-## 2. Layers
+## 2. Pieces
 
 ```
-┌ Orchestration — native per platform (platforms/<name>/)
-│   Claude: subagents / agent teams · Codex: exec loop · Antigravity: /goal, /swarm
-│   Hermes: pipeline from chat, kanban, cron
-├ Core — agent-neutral `harness` CLI (Python stdlib) + guard + prompt contracts
-│   plan · freeze · run (worktree→engine→gate→merge) · gate · review · status · compose policy
-└ Project — files in each repo
-    AGENTS.md, SPEC.md, inputs/, scripts/verify.sh, tests/, .agent-harness/config.json
+┌ Hermes (orchestrator) — your chat session, a kanban card, or a cron job
+│   skills: harness (driver), harness-worker (kanban mode)
+├ harness CLI (Python 3.11+ stdlib) — deterministic: intake, plan, freeze, run, gate, review,
+│   pipeline, audit, status, note. State in ~/.hermes/harness/ (outside every repo)
+├ Engines — claude -p · codex exec · hermes -p harness-worker -z · agy -p (optional)
+└ Project — AGENTS.md (+CLAUDE.md link), SPEC.md, inputs/, scripts/verify.sh, tests/,
+    .harness/config.json, .harness/plan.json
 ```
 
-The `harness` CLI is the contract between layers. An orchestrator — or a human in a shell —
-asks `harness gate M2` whether a milestone is done and `harness review M2 --engine codex` for a
-cold review by another vendor.
+The CLI is the only thing that decides pass/fail. Hermes drives it, reads its JSON, talks to
+you, and does the judgement work (interview, visual check, explaining failures).
 
 ## 3. Repository layout
 
 ```
-agent-harness/
-├─ README.md  DESIGN.md  LICENSE (MIT)
-├─ AGENTS.md  CLAUDE.md -> AGENTS.md         ← project template (root = what a new project gets)
-├─ SPEC.md  inputs/{HANDOFF,CLARIFICATIONS,ENVIRONMENT}.md
-├─ scripts/verify.sh  scripts/holdout.sh     ← oracle skeletons
-├─ tests/  tests/holdout/
-├─ .agent-harness/
-│   ├─ config.json                           ← per-project settings (§6)
-│   ├─ plan.json                             ← written in M0 (§5)
-│   └─ hooks/guard-bash.py                   ← installed copy of the guard
-├─ harness/                                  ← core; removed from generated projects
-│   ├─ harness.py  (CLI, stdlib only)
-│   ├─ guard-bash.py
-│   ├─ compose_policy.py
-│   └─ prompts/{architect,architect_review,build,review}.md
-├─ platforms/
-│   ├─ claude/       settings.json hooks, subagents, /milestone command, PLAYBOOK.md
-│   ├─ codex/        hooks.json, milestone-loop.sh, PLAYBOOK.md
-│   ├─ antigravity/  plugin (hooks.json, rules, skills), PLAYBOOK.md
-│   └─ hermes/       skills, shell-hook config, kanban mode, PLAYBOOK.md
-├─ examples/chronograph/                    ← HANDOFF + clarifications, benchmark notes
-├─ bootstrap-harness.sh                      ← apply to a repo: --platforms claude,codex,...
-├─ install.sh                                ← installs `harness` to ~/.agent-harness/
-└─ tests/harness/                            ← self-tests with fake engines
+hermes-agent-harness/
+├─ README.md  DESIGN.md  CONTRACT.md  LICENSE (MIT)
+├─ template/                       ← copied into a project by `harness init`
+│   ├─ AGENTS.md  CLAUDE.md -> AGENTS.md  SPEC.md
+│   ├─ inputs/{HANDOFF,CLARIFICATIONS,ENVIRONMENT}.md
+│   ├─ scripts/verify.sh  scripts/holdout.sh
+│   └─ .harness/config.json
+├─ harness/                        ← CLI package (`python3 -m harness`, or `harness`)
+│   ├─ cli  runner  gate  engines  workspace  process  holdout  guard  compose_policy
+│   ├─ audit_diff  detect  models  evidence
+│   └─ prompts/{intake,architect,architect_review,build,review}.md
+├─ hermes/
+│   ├─ skills/{harness,harness-worker}/SKILL.md
+│   ├─ hooks/{guard.py,verify_gate.py}       ← Hermes shell hooks
+│   └─ profiles/harness-worker.yaml          ← config fragment (hooks, toolsets)
+├─ contract/                       ← shared with sibling repos
+│   └─ guard-cases.json  plan.schema.json  result.schema.json
+├─ examples/chronograph/           ← intake + build benchmarks
+├─ tests/                          ← self-tests with fake engines (unittest)
+└─ install.sh                      ← CLI → ~/.local/bin/harness, skills, profile, hooks
 ```
 
-"Use this template" copies everything; the first `bootstrap-harness.sh --init` in a new
-project removes `harness/`, `platforms/` (except selected adapters), `examples/` and the
-self-tests, leaving only project files.
-
-Runner state never lives in the project repo: `~/.agent-harness/` holds `state/`, `runs/`,
-`worktrees/`, `holdout/`. Coding agents work in worktrees and cannot rewrite the record of
-their own runs by editing the repo.
+"Use this template" gives a repo that contains the harness itself; `harness init --here`
+moves `template/*` to the root and removes the harness sources. Most users run `install.sh`
+once and `harness init` in any repo.
 
 ## 4. Lifecycle
 
-1. **Intake** — spec/handoff into `inputs/HANDOFF.md` (chat, file, kanban card, issue).
-2. **Interview** — the orchestrator asks clarifying questions one at a time (4-part matrix:
-   ordering/duplicates, concurrency, time boundaries, cross-store atomicity); answers go to
-   `inputs/CLARIFICATIONS.md`. Host constraints go to `inputs/ENVIRONMENT.md`.
-3. **M0 — contract** — architect engine writes `SPEC.md`, contracts, `scripts/verify.sh`,
-   visible tests, holdout tests (`tests/holdout/`), and `.agent-harness/plan.json`. No app
-   logic. Then a cross-vendor review fixes M0 directly (nothing frozen yet).
-4. **Checkpoint 1 (human)** — review plan, test counts, holdout split, RFIs.
-   `harness freeze`: visible tests + verify script + contracts become frozen; holdouts are
-   moved to `~/.agent-harness/holdout/<project>/` and `git rm`'d from the repo.
-5. **Milestones M1..Mn**, each:
-   1. create worktree `~/.agent-harness/worktrees/<project>/<run>` on branch `harness/<run>`
-   2. builder engine runs (guards active, prompts bypassed)
-   3. gate: frozen check → `verify.sh Mk` → holdouts (§7)
-   4. reviewer engine (other vendor), fresh context: reproduce-before-fix, visual pass for UI
-   5. gate again
-   6. fast-forward `main` to the run branch (or open a PR in `merge: pr` mode); remove worktree
-   - red gate → retry with the scrubbed failure tail, up to `attempts`; still red → stop,
-     keep the worktree, notify.
-6. **Checkpoints** — any milestone with `"checkpoint": true`, any stop, budget exhaustion.
-7. **Final** — orchestrator runs `harness gate <last>` itself, visual check, optional
-   cross-vendor audit (`harness audit`), report.
-8. **Follow-ups** — new milestones appended via `harness plan add` (stored in runner state,
-   since `plan.json` is frozen), each with `verify_as` naming the existing gate level.
+1. **Intake** — drop a spec in chat (or attach it to a kanban card). Hermes runs
+   `harness intake SOURCE --engine codex|claude`: a **read-only** architect returns structured
+   questions (`needs_clarification` counts as success). Hermes asks you the blocking ones with
+   `clarify` and writes `inputs/CLARIFICATIONS.md`.
+2. **M0 — contract** — architect engine writes `SPEC.md`, contracts, `scripts/verify.sh`,
+   visible tests, holdout tests (`tests/holdout/`) and `.harness/plan.json`. No app logic.
+   Cross-vendor review fixes M0 in place.
+3. **Checkpoint 1 (you)** — Hermes shows plan, roles, test and holdout counts, open
+   questions. On approval: `harness freeze` (frozen hash; holdouts moved to
+   `~/.hermes/harness/holdout/<project>/` and removed from the repo).
+4. **Milestones** — `harness pipeline` runs, per milestone: worktree → builder → gate →
+   cross-vendor review (reproduce-before-fix; screenshot pass for UI) → gate → merge
+   (`ff` | `pr` | `human`). Red gate → retry with scrubbed failure tail up to `attempts`;
+   then stop, keep the worktree, notify.
+5. **Checkpoints** — milestones flagged `checkpoint`, any stop, budget exhaustion. Hermes
+   messages you wherever you are (desktop, Telegram, …).
+6. **Final** — Hermes reruns the last gate itself, does a browser check, optionally
+   `harness audit --engines claude,codex`, reports. Follow-ups: `harness plan add`.
 
-Every human touch is logged with `harness note "<text>"` (intervention count).
+Every human touch is logged with `harness note` (intervention count).
 
-## 5. plan.json
+### Two ways to run it
+- **Pipeline mode (default)** — in chat, Hermes starts `harness pipeline` as a background
+  process with notify-on-exit; you hear back at checkpoints. No board.
+- **Kanban mode** — one card per milestone; the `harness-worker` profile claims cards and calls
+  the same CLI. For overnight runs, phone intake, or several projects at once.
 
-```json
-{
-  "milestones": [
-    {"id": "M1", "title": "...", "goal": "...", "acceptance": ["..."],
-     "builder": "codex", "reviewer": "claude", "ui": false, "checkpoint": false}
-  ],
-  "frozen": ["tests/...", "scripts/verify.sh", "contracts/openapi.yaml"],
-  "holdout": ["tests/holdout/..."]
-}
-```
+## 5. Engines
 
-`builder`/`reviewer` default from config roles; `ui: true` turns on the visual review pass.
+| Engine | Call | Permissions | Guard during the run |
+|---|---|---|---|
+| Codex | `codex exec -C <wt> --sandbox workspace-write -c approval_policy="never" --json --output-schema F` | Codex sandbox | sandbox + post-hoc checks |
+| Claude | `claude -p --dangerously-skip-permissions --strict-mcp-config --mcp-config '{"mcpServers":{}}' --settings <run.json> --max-budget-usd N` | bypass, worktree only | PreToolUse guard injected per run via `--settings` (no files in the repo) |
+| Hermes | `hermes -p harness-worker -z PROMPT --yolo`, cwd = worktree | bypass, worktree only | profile shell hooks: `pre_tool_call` guard (`fail_closed: true`), `pre_verify` gate |
+| Antigravity (optional) | `agy -p --dangerously-skip-permissions` | bypass, worktree only | post-hoc checks only |
 
-## 6. .agent-harness/config.json
+Review runs use read-only modes where they exist (`codex review --base`, `--sandbox read-only`).
+Engine guards save retries; **the gate is the authority** — a missing guard costs time, never
+correctness. Structured output: Codex `--output-schema`, Claude `--json-schema`; the harness
+validates the JSON itself either way.
+
+## 6. .harness/config.json
 
 ```json
 {
   "project": "myapp",
-  "verify": {"command": "scripts/verify.sh {milestone}", "timeout_min": 40},
+  "verify": {"command": "scripts/verify.sh {milestone}", "timeout_min": 40, "require_tests": true},
   "holdout": {"enabled": true, "command": "scripts/holdout.sh {milestone}",
               "feedback": "names_and_messages"},
-  "roles": {"backend": "codex", "ui": "claude", "architect": "claude", "review": "cross"},
-  "engines": {"claude": {"model": "opus", "effort": "high", "max_usd_per_run": 15},
+  "roles": {"architect": "claude", "backend": "codex", "ui": "claude", "review": "cross"},
+  "engines": {"claude": {"model": "opus", "max_usd_per_run": 15},
               "codex": {"effort": "high"},
-              "hermes": {"profile": "harness-worker"},
-              "agy": {"mode": "auto"}},
-  "budgets": {"attempts": 3, "engine_timeout_min": 90, "project_max_usd": 150,
-              "review_rounds": 2},
+              "hermes": {"profile": "harness-worker"}},
+  "budgets": {"attempts": 3, "engine_timeout_min": 90, "run_timeout_min": 240,
+              "review_rounds": 2, "project_max_usd": 150},
+  "protected": ["tests/", "scripts/verify.sh", "contracts/", ".harness/", "AGENTS.md"],
   "stack": {"type": "none"},
   "merge": "ff",
-  "notify": {"command": null}
+  "notify": "hermes"
 }
 ```
 
-Compose variant: `"stack": {"type": "compose", "file": "docker-compose.yml",
-"protected_projects": [], "preview_ports": {"web": 13000, "api": 18000}}`.
+## 7. Gate
 
-## 7. Gates and holdouts
+Order, first failure stops (see `CONTRACT.md`):
+1. **Scope** — changed paths vs milestone `allowed_paths`; protected-path changes stop for a human.
+2. **Frozen** — `git diff <freeze_sha> -- <frozen>` empty and files present.
+3. **Hygiene** — no tracked `.env` or private keys; `.env` ignored.
+4. **Compose policy** — stack mode only (§8).
+5. **Verify** — `verify.command`; `NOT_RUN` never counts as `PASS`; `require_tests`.
+6. **Holdouts** — copied in, run, removed in `finally`; builder sees only test ids and
+   assertion messages (or counts only).
+7. **audit-diff** — file:line findings (secrets, eval/exec, SQL interpolation, XSS sinks);
+   high fails, medium is reported.
+8. **Candidate hash** — unchanged from the start of the gate.
 
-Gate order (first failure stops): frozen check → compose policy (stack mode) →
-`verify.command` → `holdout.command`.
+Gate output: one JSON line + `result.json`; logs stay on disk, only tails go into prompts.
 
-- **Frozen check** — `git diff --name-only <freeze_sha> -- <frozen>` plus existence; any change
-  fails the gate. Builders may add new tests (with an existing milestone tag).
-- **Holdouts** — at gate time the runner copies `~/.agent-harness/holdout/<project>/` into the
-  worktree's `tests/holdout/`, runs the holdout command, captures output to the run dir, and
-  deletes the copies in a `finally`. Feedback to the builder is **scrubbed**: test ids and
-  assertion messages only (`feedback: names_and_messages`), or pass/fail counts only
-  (`counts_only`). Source and tracebacks never reach the builder's prompt.
-- **Reviewer** sees holdout failure names too, never holdout source.
-- **Cumulative** — `verify.sh Mk` runs everything for M1..Mk; holdouts tagged per milestone
-  likewise.
+## 8. Compose stack mode (optional)
 
-## 8. Docker Compose stack mode (optional)
-
-Ported in slimmed form from the earlier software-factory engine.
-
-- **Unique project per run**: `COMPOSE_PROJECT_NAME=<project>-<runid>`; parallel runs and
-  worktrees never share networks or volumes.
-- **No host ports during gates**: tests run inside the compose network (backend tests in the
-  api container, Playwright in an `e2e` container hitting `http://web:3000`). Published ports
-  only in `harness preview` for humans and visual checks.
-- **Policy check before boot** (`docker compose config --format json`): reject
-  `container_name`, `privileged`, `network_mode: host`, docker socket mounts, bind mounts
-  outside the worktree, published ports during gates, protected project names.
-- **Teardown in `finally`**: `docker compose -p <name> down -v --remove-orphans`; before/after
-  snapshot of containers outside the project must be identical, else the gate fails loudly.
-- **Artifacts** (container logs, test reports, screenshots) copied to the run dir before
-  teardown.
-- `verify.sh` receives `HARNESS_RUN_ID`, `HARNESS_ARTIFACTS`, `COMPOSE_PROJECT_NAME`, and must
-  refuse to run destructive compose commands against any other project name.
-
-Projects without services use `"stack": {"type": "none"}`; `verify.sh` just runs the test
-commands.
+Unique `COMPOSE_PROJECT_NAME=<project>-<run>`; no published ports during gates (tests run
+inside the compose network); policy check on `docker compose config --format json` (rejects
+`container_name`, `privileged`, host network, docker socket, bind mounts outside the
+worktree, protected project names); teardown in `finally` with a before/after container
+snapshot; artifacts copied out first. `harness preview` publishes ports for you and for the
+Hermes browser check.
 
 ## 9. Safety model (honest)
 
-- Worktrees + no push + ff-only merge on green = mistakes are contained to a disposable branch.
-- `guard-bash.py` blocks known-bad commands (push, `--no-verify`, history rewrite, `reset
-  --hard`, host-wide prune, `sudo`, `curl | sh`, reading `tests/holdout`, recursive deletes
-  outside the repo). Guards are a seatbelt for honest mistakes, not a boundary: with
-  bypass-permission modes an agent can still read any file the user can, including the
-  holdout store. Holdouts are a **discipline** that removes them from the repo, prompts and
-  context; they are not secret.
-- Real isolation (running engines in containers) is a future option; config is shaped so it
-  can be added without changing the project layout.
+Worktrees, no push, merge only on green: mistakes stay on a disposable branch. Guards block
+known-bad commands and writes to protected paths. In bypass mode an agent can still read
+anything you can, including the holdout store — holdouts are a discipline that keeps them out
+of the repo, prompts and context, not a secret. Engines in containers are a later option.
 
-## 10. Platform adapters
+Hermes shell hooks need one-time consent per `(event, command)`; `install.sh` sets
+`hooks_auto_accept` only in the dedicated `harness-worker` profile, never in your default
+profile.
 
-| | Headless engine call | Guard (pre-command) | "Done" hook | Native orchestration |
-|---|---|---|---|---|
-| Claude Code | `claude -p --dangerously-skip-permissions --strict-mcp-config --output-format json` | `.claude/settings.json` PreToolUse | Stop → `harness gate` | subagents, agent teams, `/milestone` |
-| Codex | `codex exec -C <wt> --dangerously-bypass-approvals-and-sandbox --json` | `.codex/hooks.json` PreToolUse | Stop | exec milestone loop |
-| Hermes | `hermes -p harness-worker -z ... --yolo` in the worktree | profile `hooks.pre_tool_call` (`fail_closed`) | `pre_verify`, or `/goal gate add` | pipeline, kanban, cron, delegate_task |
-| Antigravity | `agy -p --dangerously-skip-permissions --mode auto` | plugin `hooks.json` PreToolUse (`{decision: deny}`) | plugin Stop (`{decision: continue}`) | `/goal`, `/swarm`, `/teamwork` |
-
-In-agent hooks are a convenience (catch problems early, save retries). **The external gate is
-the authority**: a missing or broken hook costs retries, never correctness.
-
-To verify before claiming support: Codex repo-level hooks under headless `exec` (trust
-requirement; likely `--dangerously-bypass-hook-trust`).
-
-Each `platforms/<name>/PLAYBOOK.md` describes running the milestone loop with that platform as
-orchestrator, calling `harness run/gate/review` for the deterministic parts.
-
-## 11. harness CLI
+## 10. harness CLI
 
 ```
-harness init            register project, write config, preflight
-harness preflight       engine auth, docker, ports, clean tree
-harness freeze          freeze visible tests; move holdouts out of the repo
-harness run   --milestone M --role build|review --engine E [--detach]
-harness wait  RUN_ID    exit 0 pass / 1 fail / 3 crashed / 10 still running
-harness gate  --milestone M [--worktree PATH]
-harness review --milestone M --engine E          (= run --role review)
-harness pipeline [--until M] [--next]            build→gate→review→gate→merge per milestone
-harness plan add M6 --goal ... --verify-as M5    follow-up milestones
-harness preview         boot the stack with published ports (compose mode)
-harness audit --engines claude,codex             read-only cross-vendor audit
-harness status | note "<text>"
+harness init [--here] | doctor
+harness intake SOURCE --engine E           read-only architect → questions JSON
+harness freeze
+harness run --milestone M --role build|review --engine E [--detach]
+harness wait RUN_ID                         0 pass · 1 fail · 3 crashed · 10 running
+harness gate --milestone M [--worktree P]
+harness pipeline [--until M] [--next]       stops at checkpoints / red / budget
+harness plan add M --goal ... --verify-as Mk
+harness preview | audit --engines a,b | status | note "text"
 ```
 
-`pipeline` stops at checkpoints, red gates, or budgets; exit status + a summary JSON tell the
-orchestrator what happened. Run it in the background and get notified on exit.
+## 11. Carried over
 
-## 12. Lessons carried over (from the ChronoGraph comparison)
+- **forge / ChronoGraph run:** M0 contract + freeze; cross-vendor review (single-vendor audits
+  missed their own vendor's bugs); strict empty MCP config for headless Claude; preflight auth;
+  milestone tags on new regression tests; `verify_as` follow-ups; visual pass at 1440x900 and
+  390x844 turned into geometry tests.
+- **codex-harness-template:** read-only intake with structured questions; argv without shell;
+  process-group kill; per-task lock; candidate hash before/after verify and review; review on
+  a snapshot commit; atomic `result.json`; strict config validation.
+- **agy-software-factory:** guard policy (protected paths, `.env`/keys, shell-write parsing,
+  ask on push/reset/clean); `NOT_RUN ≠ PASS`; hygiene; `audit-diff` with SARIF; `detect` to
+  seed `verify.sh`.
 
-- A visible-but-frozen suite + cross-vendor review found 15 bugs during the build that the
-  builders missed; single-vendor audits miss bugs in that vendor's own code.
-- Headless Claude must run with `--strict-mcp-config` and an empty MCP config, or connector
-  tool announcements can fill the context and kill long runs.
-- Preflight auth: an expired login burns all retries instantly.
-- New regression tests must carry an existing milestone tag or the gate never runs them.
-- `verify.sh` must lock destructive compose commands to its own project name.
-- UI: Playwright is the gate; the reviewer adds a screenshot pass at 1440x900 and 390x844 and
-  turns visual bugs into geometry/visibility tests, never pixel diffs.
+## 12. v1 test plan
 
-## 13. Test plan for v1
+1. Self-tests with fake engines: worktree/merge/keep, frozen tamper, scope, holdout
+   copy+scrub+cleanup, retries, budgets, compose policy, teardown, candidate hash.
+2. `contract/guard-cases.json` passes against `harness/guard.py`.
+3. Live hook checks with tiny prompts: Hermes `pre_tool_call` + `pre_verify`; Claude guard via
+   `--settings`.
+4. One full live run of `examples/chronograph/build`.
 
-1. Self-tests with fake engines: worktree create/merge/keep, frozen tamper, holdout copy +
-   scrub + cleanup, retries, budget stop, compose policy accept/reject, teardown snapshot.
-2. Live hook checks with tiny prompts: Claude PreToolUse + Stop, Codex PreToolUse (headless
-   trust), Hermes pre_tool_call + pre_verify, Antigravity plugin PreToolUse + Stop.
-3. One full live example run (`examples/chronograph/build`) with one orchestrator.
-4. Ported parity suites: 39 agy-software-factory tests, 33 codex-harness-template tests.
-
-## 14. Decisions from the repo merge
-
-1. **Core language: Python 3.11+ stdlib only.** Node code from agy-software-factory (detect,
-   check, audit-diff, slices/land, twin, guard tokenizer) is ported, with its tests.
-2. **Engine permissions:** sandboxed where supported (Codex `exec --sandbox workspace-write`,
-   intake and review `read-only`); Claude/agy/Hermes run with bypass inside the worktree only.
-   The runner — not the agent — boots Docker stacks and runs gates on the host.
-3. **Merge policy** per project: `ff` (default) | `pr` | `human` (stop at
-   `ready_for_human_review`, the codex-harness-template behaviour).
-4. **Three layers protect tests:** pre-tool guard (prevent), frozen hash + post-hoc scope /
-   protected-path check (detect), holdouts outside the repo (hide).
-5. **Run plumbing** from codex-harness-template: argv without shell, process-group kill of
-   descendants, per-task lock, candidate hash before/after verify and review, atomic
-   `result.json`, review on a snapshot commit in a detached worktree.
-6. **Checks from agy-software-factory:** `NOT_RUN` is never `PASS`; `require_tests`; repo
-   hygiene (.env, tracked keys); `audit-diff` with SARIF; optional slices with `land`.
-   The receipt is a digest, not a signature, and is stored outside the repo.
-7. **Intake** is a first-class command (`harness intake --engine E`): read-only architect,
-   structured questions JSON, no-mutation check, `needs_clarification` counts as success.
-8. **Antigravity is supported** via its plugin format (`hooks.json` PreToolUse/Stop with
-   `{decision}` on stdout), proven in agy-software-factory.
-9. **Benchmarks:** `examples/chronograph/intake` (master spec, rubric) and
-   `examples/chronograph/build` (HANDOFF + clarifications, Antigravity vs Hermes results).
-
-## 15. Out of v1 / later
-
-Engines in containers; PR merge mode polish; GitHub issue
-intake; parallel independent milestones.
+## 13. Later
+Engines in containers; PR merge polish; GitHub issue intake; parallel slices with `land`;
+`twin` mock server.

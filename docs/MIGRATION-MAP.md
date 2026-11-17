@@ -1,6 +1,8 @@
-# Migration map: agy-software-factory + codex-harness-template + forge → agent-harness
+# Feature map: what hermes-agent-harness adopts from its siblings
 
-Goal: feature parity, so both old repos can be archived with a pointer here.
+The sibling repos stay independent and platform-native (see `CONTRACT.md`). This map records
+which of their capabilities this Hermes harness reimplements, and where. Rows marked
+"plat/antigravity" or "plat/codex" stay in the sibling repo and are listed for reference only.
 Source inventories: agy-software-factory @ fc268cf (Node ≥20, 39 tests passing),
 codex-harness-template @ 9bab498 (Python 3.11+, 33 tests passing), forge (~/forge, Python).
 
@@ -60,8 +62,8 @@ Legend: **core** = agent-neutral `harness/` · **plat/X** = platforms/X adapter 
 | Prompts (m0_build, m0_review, build, review incl. visual pass) | core prompts |
 | ChronoGraph build benchmark + audit report | ex/chronograph/build |
 
-## Conflicts resolved (see DESIGN.md)
-1. Core language → Python stdlib (two of three sources; Hermes is Python). Node code is ported, not wrapped.
+## Decisions (see DESIGN.md)
+1. Core language → Python stdlib (Hermes is Python). Useful Node logic is ported, not wrapped.
 2. Agent permissions → sandboxed where the engine supports it (Codex `workspace-write`, no bypass);
    bypass only inside harness worktrees for engines without a sandbox.
 3. Done → gate + (ff-merge | PR | stop for human), set per project. Codex template's
