@@ -98,9 +98,14 @@ def _check_rel(rel: str, ctx: GuardContext, is_dir: bool = False) -> Decision:
 
     # frozen files (frozen at checkpoint 1); deleting a parent dir also counts
     for f in ctx.frozen:
-        fn = posixpath.normpath(f.replace("\\", "/"))
+        raw = f.replace("\\", "/")
+        fn = posixpath.normpath(raw)
         if rel == fn or (is_dir and fn.startswith(as_dir)):
             return Decision("deny", f"Blocked modification of frozen file: {fn}")
+        # Frozen directory ("tests/"): existing files inside are frozen; NEW files may be added.
+        if raw.endswith("/") and rel.startswith(fn + "/"):
+            if is_dir or os.path.lexists(os.path.join(ctx.root, rel)):
+                return Decision("deny", f"Blocked modification of frozen file under {fn}/: {rel}")
 
     # secrets
     if (base == ".env" or base.startswith(".env.")) and base not in ENV_TEMPLATES:

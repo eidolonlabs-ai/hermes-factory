@@ -91,8 +91,10 @@ def _frozen(ctx: GateContext) -> list[Check]:
     t0 = time.monotonic()
     if not ctx.freeze_sha or not ctx.frozen:
         return [Check("frozen", "NOT_RUN", "project not frozen yet")]
-    changed = workspace.git(ctx.worktree, "diff", "--name-only", "-z", ctx.freeze_sha, "--",
-                            *ctx.frozen).split("\0")
+    # Added files are allowed (CONTRACT §6: builders may add tests); modified, deleted,
+    # renamed or type-changed frozen files are not. Frozen entries may be directories.
+    changed = workspace.git(ctx.worktree, "diff", "--name-only", "-z", "--no-renames",
+                            "--diff-filter=MDT", ctx.freeze_sha, "--", *ctx.frozen).split("\0")
     missing = [p for p in ctx.frozen if not (ctx.worktree / p).exists()]
     bad = sorted(set(filter(None, changed)) | set(missing))
     if bad:

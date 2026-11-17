@@ -68,6 +68,22 @@ class RunnerTests(CoreCase):
         self.assertIn("spec/frozen.txt", check(res, "frozen")["details"])
         self.assertEqual(git(self.repo, "rev-parse", "HEAD"), head)  # main untouched
 
+    def test_frozen_directory_allows_added_tests(self):
+        """plan.frozen may name a directory; adding a file there passes, editing one fails."""
+        import copy
+        from core_support import PLAN
+        plan = copy.deepcopy(PLAN)
+        plan["frozen"] = ["spec/", "scripts/verify.sh", "scripts/holdout.sh"]
+        for m in plan["milestones"]:
+            m["allowed_paths"] = ["src/", "spec/"]
+        self.make_repo(plan=plan)
+        self.fake(GOOD + "\npathlib.Path('spec/new_regression.txt').write_text('added')")
+        res = self.run_ms(attempts=1)
+        self.assertTrue(res["passed"], check(res, "frozen"))
+        self.fake(GOOD + "\npathlib.Path('spec/frozen.txt').write_text('edited')")
+        res = self.run_ms("M2", attempts=1)
+        self.assertEqual(check(res, "frozen")["status"], "FAIL")
+
     def test_out_of_scope_change_fails(self):
         self.make_repo()
         self.fake(GOOD + "\npathlib.Path('other').mkdir(); pathlib.Path('other/x.txt').write_text('x')")

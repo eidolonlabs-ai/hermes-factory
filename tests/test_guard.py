@@ -166,3 +166,18 @@ class ContractPhaseTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         _, rc = hooks_adapters.claude_pre_tool_use(raw, {"HARNESS_ROOT": "/repo", "HARNESS_MILESTONE": "M1"})
         self.assertEqual(rc, 2)
+
+
+class FrozenDirectoryTests(unittest.TestCase):
+    def test_frozen_dir_blocks_existing_allows_new(self):
+        import tempfile, os
+        from harness.types import GuardContext
+        from harness import guard
+        root = tempfile.mkdtemp()
+        os.makedirs(os.path.join(root, "tests"))
+        open(os.path.join(root, "tests", "test_old.py"), "w").close()
+        ctx = GuardContext(root=root, frozen=["tests/"])
+        self.assertEqual(guard.check_write("tests/test_old.py", ctx).decision, "deny")
+        self.assertEqual(guard.check_write("tests/test_new_regression.py", ctx).decision, "allow")
+        self.assertEqual(guard.check_shell("rm -rf tests", ctx).decision, "deny")
+        self.assertEqual(guard.check_shell("echo x >> tests/test_old.py", ctx).decision, "deny")
