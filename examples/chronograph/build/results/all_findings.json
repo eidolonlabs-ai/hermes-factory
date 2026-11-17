@@ -1,0 +1,250 @@
+{
+ "codex-ag": [
+  {
+   "id": "F001",
+   "severity": "high",
+   "area": "conflict-engine",
+   "title": "Backdated assertions overlap the still-valid history of retracted facts",
+   "location": "api/app/conflict_engine.py:343-354",
+   "repro": "Starting empty, POST /api/episodes asserting 'server | STATUS | healthy' at 2026-01-01T00:00:00Z. Retract that fact through POST /api/facts/{id}/retract with retracted_at=2026-01-03T00:00:00Z. Then ingest 'server | STATUS | degraded' at 2026-01-02T00:00:00Z. Query /api/graph?as_of=2026-01-02T12:00:00Z.",
+   "expected": "The backdated conflict must adjust overlapping intervals, as required by CLARIFICATIONS.md. Only degraded should cover January 2 at noon; healthy must end when the replacement starts.",
+   "actual": "The functional-resolution query excludes every retracted row, although those rows retain valid historical intervals. The engine therefore inserts degraded as an open active fact without adjusting healthy's January 1\u20133 interval. The graph returns both objects for the functional STATUS predicate."
+  },
+  {
+   "id": "F002",
+   "severity": "high",
+   "area": "extractor",
+   "title": "Natural-language extraction silently drops subjects containing three or more words",
+   "location": "api/app/extractor.py:27-81",
+   "repro": "POST /api/episodes with a valid title and reference_time and raw_content='Primary API Server has IP 10.0.0.1'. The same problem occurs with 'Primary API Server status is healthy'.",
+   "expected": "The common-verb natural-language formats required by CLARIFICATIONS.md should extract the supplied subject, predicate, and object. No two-word subject restriction is specified.",
+   "actual": "Every natural-language subject regex permits only one token plus one optional token. Neither statement matches, and extract_triples returns an empty list. The API successfully commits the episode with extracted_count=0 and no facts."
+  },
+  {
+   "id": "F003",
+   "severity": "medium",
+   "area": "neo4j-postgres-sync",
+   "title": "Failed ingestion leaves committed Neo4j facts outside the Postgres ledger",
+   "location": "api/app/conflict_engine.py:515-523; api/app/conflict_engine.py:162-204",
+   "repro": "With 'server | STATUS | healthy' already committed, ingest a later 'server | STATUS | degraded'. Let the new fact's first Neo4j execute_query complete, then make Neo4j unavailable so its subsequent cleanup query fails. After connectivity recovers, query /api/facts and /api/graph at the new episode's timestamp.",
+   "expected": "The failed ingestion should preserve the prior committed state across both databases, or its partial projection should be repaired before graph results expose it. HANDOFF.md requires atomic conflict resolution.",
+   "actual": "Each Neo4j execute_query commits independently before session.commit(). The exception rolls back the pending Postgres episode and fact changes but leaves the new degraded relationship committed in Neo4j. The old healthy relationship has not yet been shortened, so the graph returns both while Postgres contains only healthy. There is no reconciliation path, and retrying generates another fact ID instead of removing the orphan."
+  },
+  {
+   "id": "F004",
+   "severity": "medium",
+   "area": "concurrency",
+   "title": "Reset can erase a concurrent ingestion's graph projection after its ledger commit",
+   "location": "api/app/seed.py:60-73",
+   "repro": "Start POST /api/demo/reset and allow its Postgres deletion transaction to commit at line 67. Before its Neo4j deletion executes, complete POST /api/episodes for a new fact, including its Neo4j projection and Postgres commit. Then allow reset's MATCH (n) DETACH DELETE n to execute.",
+   "expected": "Reset and ingestion should have a consistent ordering across both databases: the new fact should either be removed from both or survive in both.",
+   "actual": "The new fact survives in Postgres with neo4j_synced_at populated, but reset deletes its Neo4j relationship and nodes. Subsequent graph queries omit a successfully ingested ledger fact. The per-subject/predicate ingestion locks do not coordinate with reset. The seed endpoint inherits the same race because it calls reset_all_data."
+  },
+  {
+   "id": "F005",
+   "severity": "medium",
+   "area": "ui",
+   "title": "An older scrubber response can overwrite the graph after the newer response completes",
+   "location": "web/src/App.tsx:83-108",
+   "repro": "Select timestamp T1. Allow all three fetches to receive headers so the sequence check passes, but delay the T1 graph response body while graphRes.json() is pending. Select T2 and let its requests finish and render. Then finish delivering the T1 response body.",
+   "expected": "The graph must continue to show T2, matching the scrubber timestamp. Responses belonging to superseded requests must be discarded after asynchronous body reads as well.",
+   "actual": "The sequence check runs only before the awaited JSON reads. The T1 continuation subsequently calls setNodes and setEdges without another check, overwriting the T2 graph while asOf remains T2. The later facts and conflicts body reads have the same unguarded state updates."
+  },
+  {
+   "id": "F006",
+   "severity": "medium",
+   "area": "ui",
+   "title": "Initial loading labels the graph with a different timestamp from the one queried",
+   "location": "web/src/App.tsx:88-97; api/app/main.py:375-383,479-499",
+   "repro": "With the current date before December 2026, ingest 'server | STATUS | healthy' at 2026-01-01T00:00:00Z. Manually retract it with retracted_at=2026-12-01T00:00:00Z. Reload the web application.",
+   "expected": "The displayed scrubber timestamp must equal the graph response's as_of, or the application must query again for the timestamp it chooses to display. At December 1, the fact must be absent under the exclusive valid_until rule.",
+   "actual": "The initial request omits as_of, so the API queries at the current time and returns healthy as temporally active. Its timeline maximum includes the future valid_until of December 1. The frontend ignores gData.as_of and sets the scrubber to timeline.max_timestamp, displaying December 1 with a graph that still contains healthy. Clicking Latest State then removes the fact despite leaving the displayed timestamp unchanged."
+  },
+  {
+   "id": "F007",
+   "severity": "medium",
+   "area": "ui",
+   "title": "Lineage arrows point to the next displayed row instead of the recorded successor",
+   "location": "web/src/components/ConflictInspector.tsx:250-256",
+   "repro": "For one subject and STATUS predicate, ingest object A at January 1 and B at January 5. At January 3, ingest an episode containing 'server | STATUS | C' followed by 'RETRACT: server | STATUS | C', making C a zero-width retracted fact. Then ingest D backdated to January 2. Open that predicate's lineage inspector.",
+   "expected": "The inspector should show the recorded links A \u2192 D and D \u2192 B, with the retracted C row displayed separately from that succession.",
+   "actual": "The rows sort as A, D, C, B, and D.superseded_by_id correctly identifies B. However, the renderer only checks whether superseded_by_id is nonempty and places a SUPERSEDED BY arrow immediately below D. The arrow therefore visually identifies C as D's successor."
+  },
+  {
+   "id": "F008",
+   "severity": "medium",
+   "area": "ui",
+   "title": "Opposite-direction graph edges receive coincident paths and predicate badges",
+   "location": "web/src/components/GraphCanvas.tsx:103-127,320-332",
+   "repro": "Ingest one episode containing 'A | DEPENDS_ON | B' and 'B | CONNECTS_TO | A', then inspect the graph canvas.",
+   "expected": "Both directed relationships and their predicate badges should be separately visible and selectable.",
+   "actual": "Parallel-edge grouping uses ordered source/target keys, so each relationship is treated as the only edge in its group and receives offset=0. Their quadratic paths occupy the same segment in opposite directions, and both badges occupy the same midpoint. The later-rendered badge covers the earlier predicate and intercepts clicks intended for it."
+  },
+  {
+   "id": "F009",
+   "severity": "medium",
+   "area": "ui",
+   "title": "Node dragging uses incorrect coordinates when the SVG is letterboxed",
+   "location": "web/src/components/GraphCanvas.tsx:131-137,249-250",
+   "repro": "Render the graph SVG in a 900-by-700-pixel viewport with two subject nodes, at zoom=1 and pan=(0,0). The first subject's computed position is approximately (450,153.75), rendered at viewport-relative (450,243.75) because the 900-by-520 viewBox is vertically centered. Start dragging that node and move the pointer down one pixel.",
+   "expected": "The node should move down approximately one SVG unit and remain under the pointer.",
+   "actual": "The handler independently scales coordinates by the full bounding rectangle, ignoring preserveAspectRatio='xMidYMid meet' and its 90-pixel vertical offset. It maps the pointer's y=244.75 to approximately 181.81 instead of 154.75, making the node jump about 28 SVG units. Dragging remains misaligned whenever the viewport aspect ratio differs from 900:520."
+  }
+ ],
+ "codex-hf": [
+  {
+   "id": "CG-001",
+   "severity": "medium",
+   "area": "neo4j-postgres-sync",
+   "title": "Graph reads can expose facts before their ledger transaction commits",
+   "location": "api/app/storage.py:172-176; api/app/storage.py:141-149; api/app/queries.py:151-154",
+   "repro": "Ingest `server | STATUS | online` at `2024-01-01T00:00:00Z`. Start another ingestion asserting `server | STATUS | offline` at `2024-02-01T00:00:00Z`. After project() commits the Neo4j transaction at storage.py:143, but before the PostgreSQL transaction commits, issue GET /api/graph?as_of=2024-03-01T00:00:00Z. The reader sees the committed dirty marker, fails to acquire the writer's advisory lock, and proceeds to query Neo4j. GET /api/facts for the new fact ID during this window returns 404. If the PostgreSQL transaction subsequently fails, the graph response has exposed an assertion that is rolled back.",
+   "expected": "Graph reads should return a projection of committed ledger data, waiting for the mutation or its recovery when necessary. Synchronization must cover the graph query itself so a writer cannot publish uncommitted facts between the consistency check and the query.",
+   "actual": "repair_if_idle() returns immediately when a writer owns the lock, while mutation() publishes Neo4j changes before committing PostgreSQL. GET /api/graph can therefore return a new fact or retraction absent from the committed source of truth, including changes from an ultimately failed ingestion."
+  },
+  {
+   "id": "CG-002",
+   "severity": "medium",
+   "area": "ui",
+   "title": "Failed time-travel requests leave old facts under the newly selected timestamp",
+   "location": "web/src/App.tsx:90-94; web/src/App.tsx:190-198; web/src/App.tsx:324-328",
+   "repro": "Load the demo successfully in live mode, where web-01 STATUS is online. Make the next graph request fail, such as when the API becomes unavailable. Enter `2024-07-01T00:00:00Z` and apply it. After the request fails, inspect the visible timestamp, graph, and fact list.",
+   "expected": "The visible 'As of' timestamp should identify the snapshot actually displayed. On failure, retain the previous snapshot's timestamp or hide the old snapshot so it cannot be read as the requested historical result.",
+   "actual": "Applying the input immediately changes asOfMs, and the visible timestamp renders from that requested value. The failure handler clears loading but retains the previous graph. The page consequently labels the existing online fact as the July snapshot, although the demo's correct July status is offline. An error banner appears, but the graph and fact list remain displayed under the wrong time."
+  }
+ ],
+ "claude-ag": [
+  {
+   "id": "F1",
+   "severity": "high",
+   "area": "conflict-engine",
+   "title": "Retracted rows are ignored when placing a new fact, but the graph still shows them during their interval, so a functional predicate ends up with two active values",
+   "location": "api/app/conflict_engine.py:343-352 (status != 'retracted' filter), :440 (only trims prev when status=='active'); api/app/main.py:423-435",
+   "repro": "Ep1 2026-01-01 'svc | STATUS | up'; Ep2 2026-03-01 'RETRACT: svc | STATUS | up' (up becomes retracted [Jan,Mar)); Ep3 backdated 2026-02-01 'svc | STATUS | down'. Then GET /api/graph?as_of=2026-02-15. Variant: A(Jan) is superseded by B(Mar), B is retracted, then a backdated C arrives at Feb: C is created active [Feb,inf) and A is not trimmed because it is 'superseded'.",
+   "expected": "Only one STATUS value at any as_of. Overlapping intervals are split or adjusted (CLARIFICATIONS #1).",
+   "actual": "'down' is inserted active [Feb,inf) without adjusting the retracted 'up' [Jan,Mar), which /api/graph still returns as active. Both STATUS=up and STATUS=down are active edges on 2026-02-15. In the variant, A [Jan,Mar) and C [Feb,inf) overlap."
+  },
+  {
+   "id": "F2",
+   "severity": "medium",
+   "area": "conflict-engine",
+   "title": "A backdated assertion of the same object as the next fact creates a fake 'X superseded by X' conflict",
+   "location": "api/app/conflict_engine.py:366-423",
+   "repro": "Ep at 2026-03-01 'svc | VERSION | v2'; then a backdated ep at 2026-02-01 'svc | VERSION | v2'.",
+   "expected": "The same value is merged or extended back to Feb (idempotent per CLARIFICATIONS #2 and the interval-adjust rule in #1). No supersession.",
+   "actual": "The idempotency check only looks at prev_fact. The code inserts a new v2 row [Feb,Mar) with status 'superseded' and superseded_by = the March v2 row. Lineage and /api/conflicts report v2 superseded by v2 as a conflict."
+  },
+  {
+   "id": "F3",
+   "severity": "low",
+   "area": "conflict-engine",
+   "title": "A backdated non-functional assertion creates a duplicate active row for the same triple",
+   "location": "api/app/conflict_engine.py:285-340",
+   "repro": "Ep 2026-03-01 '[a] --DEPENDS_ON--> [b]'; then a backdated ep 2026-02-01 with the same triple.",
+   "expected": "The existing fact's interval is extended back, or the assertion is a no-op.",
+   "actual": "No candidate covers Feb, so a second active row is inserted [Feb,inf). From March on, two identical active DEPENDS_ON edges appear in the graph and in the ledger."
+  },
+  {
+   "id": "F4",
+   "severity": "medium",
+   "area": "neo4j-postgres-sync",
+   "title": "Neo4j writes are committed before Postgres commits and are never undone, so a mid-sync failure leaves phantom facts in Neo4j",
+   "location": "api/app/conflict_engine.py:515-523 (also 587-589)",
+   "repro": "Ingest an episode that supersedes a fact (it creates new B and modifies old A). The sync of B succeeds; the sync of A raises (Neo4j transient error or timeout).",
+   "expected": "Postgres (the source of truth) and Neo4j stay consistent. A partial projection is rolled back, compensated, or retried using neo4j_synced_at.",
+   "actual": "The exception skips session.commit(), so Postgres rolls back B and the change to A. Neo4j keeps B's FACT edge as active. /api/graph reads from Neo4j, so it shows a fact missing from the ledger, plus two active values next to the old A edge."
+  },
+  {
+   "id": "F5",
+   "severity": "medium",
+   "area": "concurrency",
+   "title": "Reset and seed are not serialized with ingestion, which can wipe Neo4j after Postgres commits",
+   "location": "api/app/seed.py:60-73, 76-91",
+   "repro": "Two tabs: tab 1 clicks 'Load Demo' while tab 2 POSTs /api/episodes (or both click 'Load Demo'). Order: the seed's Postgres DELETE commits, then the other request ingests and commits to both Postgres and Neo4j, then the seed runs MATCH (n) DETACH DELETE n.",
+   "expected": "Reset/seed holds a global lock, or the two databases are cleared atomically with respect to ingests.",
+   "actual": "The other request's facts stay in Postgres but are deleted from Neo4j, so the graph and lineage links are missing for ledger rows. With two seeds, one seed's later episodes ingest against a ledger the other seed just wiped (for example, v1.1.0 is inserted active without superseding anything), and duplicate episodes appear."
+  },
+  {
+   "id": "F6",
+   "severity": "low",
+   "area": "api-contract",
+   "title": "Manually retracting a superseded fact silently does nothing",
+   "location": "api/app/conflict_engine.py:572-581",
+   "repro": "After seeding, POST /api/facts/{id of auth-service VERSION v1.0.0}/retract with no body (retracted_at defaults to now, which is after valid_until).",
+   "expected": "The fact is marked retracted (CLARIFICATIONS #4, manual retraction), or the API returns an error.",
+   "actual": "Returns 200 with status 'superseded' and nothing changed."
+  },
+  {
+   "id": "F7",
+   "severity": "low",
+   "area": "extractor",
+   "title": "The natural-language phrase 'located in' is not recognized without 'is'",
+   "location": "api/app/extractor.py:51",
+   "repro": "Episode content: 'auth-service located in us-east-1'.",
+   "expected": "Extract (auth-service, LOCATION, us-east-1). CLARIFICATIONS #3 lists `located in`.",
+   "actual": "The regex requires 'is located in', 'location is' or 'is deployed in'. Zero triples are extracted."
+  },
+  {
+   "id": "F8",
+   "severity": "low",
+   "area": "ui",
+   "title": "Dragging a node maps the cursor wrongly when the SVG is letterboxed",
+   "location": "web/src/components/GraphCanvas.tsx:131-145 with :249-251",
+   "repro": "Click 'Full Graph' on a wide screen (container about 1900x600; the viewBox is 900x520 with preserveAspectRatio meet), then drag a node.",
+   "expected": "The node follows the cursor.",
+   "actual": "The code assumes the viewBox fills the whole element (rect.width maps to 900), ignoring the horizontal letterbox offset and the uniform scale. The node jumps and drifts away from the pointer."
+  }
+ ],
+ "claude-hf": [
+  {
+   "id": "F1",
+   "severity": "medium",
+   "area": "conflict-engine",
+   "title": "Backdated assertion after a retraction inherits the retracted fact's boundary, so the key ends up with no active fact",
+   "location": "api/app/engine.py:44-47 (end/successor_id copied from `containing`) together with retraction at engine.py:26-29 and queries.py:92-94",
+   "repro": "1) Episode @2024-01-01 `a | STATUS | x` creates F1 (active). 2) Episode @2024-03-01 `a | STATUS | y` creates F2 (active); F1 becomes [Jan,Mar) with superseded_by=F2. 3) POST /api/facts/F2/retract. 4) Episode @2024-02-01 `a | STATUS | z`. The timeline excludes F2, and F1 contains Feb, so the new fact F3 copies F1's old valid_until=Mar and superseded_by_id=F2.",
+   "expected": "F3 (z) is the latest non-retracted value, so it should be active and open-ended from Feb (the same result as ingesting z after Mar). It should not point to a retracted fact.",
+   "actual": "F3 is stored as status=superseded, valid_until=2024-03-01, superseded_by_id=F2 (retracted). (a, STATUS) has no active fact, and GET /api/graph?as_of=2024-04-01 returns no STATUS edge for a. The same happens after manually retracting a middle fact in a chain."
+  },
+  {
+   "id": "F2",
+   "severity": "medium",
+   "area": "conflict-engine",
+   "title": "Backdated re-assertion of the currently active object is a no-op instead of splitting the overlapping earlier interval (contradicts C#1); result depends on ingest order",
+   "location": "api/app/engine.py:22,32-34 (active exact-match check runs before the temporal containing/split logic)",
+   "repro": "Episode @2024-01-01 `a | STATUS | x` (F1); episode @2024-06-01 `a | STATUS | y` (F2 active; F1 is [Jan,Jun)); episode @2024-03-01 `a | STATUS | y`. Then GET /api/graph?as_of=2024-04-01. For comparison: if `a | STATUS | z` @2024-09-01 had been ingested before the Mar episode, the same Mar episode would split F1 and y would be valid in April.",
+   "expected": "Per C#1 (split/adjust overlapping intervals), y holds from 2024-03-01: F1 is cut to [Jan,Mar) and y covers Mar onward. Ingesting the same facts in a different order gives the same timeline.",
+   "actual": "Returns noop with fact_id=F2 and changes nothing. as_of=2024-04-01 still shows x, even though an episode states y held on 2024-03-01. The final timeline depends on whether y is still the active value when the backdated episode arrives."
+  },
+  {
+   "id": "F3",
+   "severity": "medium",
+   "area": "conflict-engine",
+   "title": "Episode RETRACT statements only match active facts, so historical (superseded) facts can't be retracted from an episode",
+   "location": "api/app/engine.py:22-25 (`active` requires status=='active'; otherwise retract_not_found)",
+   "repro": "POST /api/demo/seed, then ingest an episode containing `RETRACT: web-01 | HAS_IP | 10.0.0.1` (a superseded fact that exists in the ledger).",
+   "expected": "Per C#4, retraction statements in episodes retract the named fact, just as the manual POST /api/facts/{id}/retract can retract superseded facts.",
+   "actual": "The action is retract_not_found, nothing changes, and the request still returns 201. The erroneous historical fact stays visible in time-travel queries (e.g. as_of=2024-02-01)."
+  },
+  {
+   "id": "F4",
+   "severity": "low",
+   "area": "api-contract",
+   "title": "Date-only ISO-8601 `as_of` rejected with 422 (and the error message names occurred_at)",
+   "location": "api/app/schemas.py:38-39 reused for query params via api/app/queries.py:18,149",
+   "repro": "GET /api/graph?as_of=2024-02-01 (or GET /api/facts?as_of=2024-02-01)",
+   "expected": "HANDOFF \u00a73.3 says `as_of=<ISO8601>`. A calendar date is valid ISO-8601 and should be treated as 2024-02-01T00:00:00Z. SPEC \u00a76 itself lists expected graphs as `as_of=2024-02-01`.",
+   "actual": "Returns 422 with \"occurred_at must be an ISO-8601 timestamp with a T separator\"."
+  },
+  {
+   "id": "F5",
+   "severity": "low",
+   "area": "ui",
+   "title": "UI reads offset-less timestamps as browser-local time, while the API treats them as UTC",
+   "location": "web/src/time.ts:6-16 (parseInstant uses new Date), used by web/src/components/IngestDrawer.tsx:83-91 and web/src/App.tsx:190-198",
+   "repro": "In a browser set to UTC-5, type `2024-03-01T00:00:00` (no Z) into the ingest drawer's Occurred-at field and submit, or into the as-of input and apply.",
+   "expected": "The same string means the same instant in the UI and the API: 2024-03-01T00:00:00Z (the API treats a missing offset as UTC).",
+   "actual": "The UI sends occurred_at=2024-03-01T05:00:00.000Z and queries as_of=2024-03-01T05:00:00Z. The episode is stored 5 hours later than the same request made directly against the API, which can change which fact wins a conflict near a boundary."
+  }
+ ]
+}
