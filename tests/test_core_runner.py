@@ -1,4 +1,5 @@
 import json
+import json
 import os
 import subprocess
 import sys
@@ -83,6 +84,27 @@ class RunnerTests(CoreCase):
         self.fake(GOOD + "\npathlib.Path('spec/frozen.txt').write_text('edited')")
         res = self.run_ms("M2", attempts=1)
         self.assertEqual(check(res, "frozen")["status"], "FAIL")
+
+    def test_guard_frozen_list_is_files_at_freeze(self):
+        """A frozen dir gives the engine guard the files that existed at freeze, so tests added
+        later (even by this run) remain editable (found in the live ChronoGraph M3 review)."""
+        import copy
+        from core_support import PLAN
+        plan = copy.deepcopy(PLAN)
+        plan["frozen"] = ["spec/", "scripts/verify.sh", "scripts/holdout.sh"]
+        for m in plan["milestones"]:
+            m["allowed_paths"] = ["src/", "spec/"]
+        self.make_repo(plan=plan)
+        self.fake(GOOD + """
+import json
+frozen = json.load(open(os.environ['HARNESS_FROZEN_FILE']))
+pathlib.Path('src/frozen_seen.txt').write_text(json.dumps(sorted(frozen)))
+""")
+        res = self.run_ms(attempts=1)
+        self.assertTrue(res["passed"], res.get("summary"))
+        seen = json.loads(git(self.repo, "show", "HEAD:src/frozen_seen.txt"))
+        self.assertIn("spec/frozen.txt", seen)
+        self.assertNotIn("spec/", seen)
 
     def test_out_of_scope_change_fails(self):
         self.make_repo()

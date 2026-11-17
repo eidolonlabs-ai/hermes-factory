@@ -181,7 +181,9 @@ def snapshot_foreign(project_name: str, timeout_s: float = 30) -> set[str]:
             labels = dict(kv.split("=", 1) for kv in labels.split(",") if "=" in kv)
         if labels.get("com.docker.compose.project") == project_name:
             continue
-        out.add(f"{c.get('ID', '')}:{c.get('State', '')}")
+        # id:state:name:project — id and state decide; name/project make reports traceable
+        out.add(f"{c.get('ID', '')}:{c.get('State', '')}:{c.get('Names', '')}:"
+                f"{labels.get('com.docker.compose.project', '-')}")
     return out
 
 

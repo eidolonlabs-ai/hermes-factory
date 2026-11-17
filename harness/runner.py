@@ -39,6 +39,23 @@ def write_status(rdir: Path, **kw) -> None:
     write_json(p, s)
 
 
+def _expand_frozen(repo, freeze_sha, frozen: list[str]) -> list[str]:
+    if not freeze_sha:
+        return list(frozen)
+    out: list[str] = []
+    for f in frozen:
+        if f.endswith("/"):
+            try:
+                names = workspace.git(repo, "ls-tree", "-r", "--name-only", "-z", freeze_sha, "--", f)
+            except Exception:
+                out.append(f)
+                continue
+            out += [n for n in names.split("\0") if n]
+        else:
+            out.append(f)
+    return out
+
+
 def _register_active(c, engine: str, env: dict):
     """Hermes shell hooks run with a scrubbed env and the profile home as cwd, so the guard
     hook finds live runs through <HARNESS_HOME>/active/<run_id>.json (see hooks_adapters)."""
@@ -112,7 +129,7 @@ def _phase(c: _Ctx, role: str, engine: str, max_attempts: int, feedback: str) ->
                                    base_sha=c.base_sha, engine=engine, feedback=feedback,
                                    compose_proj=c.compose_proj))
         inv = engines.build_invocation(engine, role=role, worktree=c.ws.path, prompt=pf.read_text(),
-                                       prompt_file=pf, run_dir=c.rdir, cfg=c.cfg, frozen=c.frozen,
+                                       prompt_file=pf, run_dir=c.rdir, cfg=c.cfg, frozen=c.guard_frozen,
                                        attempt=n, milestone=c.ms.get("verify_as") or c.ms["id"])
         inv.env["COMPOSE_PROJECT_NAME"] = c.compose_proj
         remaining = max(1.0, c.deadline - time.monotonic())
@@ -181,6 +198,10 @@ def execute_run(project: str, milestone: str, role: str, engine: str, *, attempt
         c.project, c.run_id, c.rdir = project, run_id, rdir
         c.ms = milestone_def(c.repo, milestone, st.get("extra_milestones"))
         c.freeze_sha, c.frozen = st.get("freeze_sha"), list(st.get("frozen") or [])
+        # The in-engine guard gets the frozen FILES as of the freeze commit: a frozen directory
+        # ("tests/") freezes what existed then, while files added later (new regression tests,
+        # including ones this run adds) stay editable. The gate checks dirs with --diff-filter=MDT.
+        c.guard_frozen = _expand_frozen(c.repo, c.freeze_sha, c.frozen)
         if milestone != "M0" and not c.freeze_sha:
             raise ConfigError("project is not frozen; finish M0 and run `harness freeze` first")
         ok, why = engines.probe(engine)
@@ -247,6 +268,8 @@ def execute_run(project: str, milestone: str, role: str, engine: str, *, attempt
         result.update(status="crashed", passed=False, summary=f"{type(e).__name__}: {e}",
                       traceback=traceback.format_exc()[-1500:])
     finally:
+        if ws is not None and getattr(c, "compose_proj", None):
+            _down_engine_stack(c)  # also on interrupt: never leave an engine's stack running
         if lock:
             lock.release()
         result["finished"] = now()

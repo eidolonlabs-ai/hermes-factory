@@ -287,6 +287,14 @@ def cmd_status(a) -> int:
         for r in sorted(d.glob("*/status.json")):
             s = read_json(r, {})
             if s.get("state") == "running":
+                pid = s.get("pid")
+                try:
+                    if pid:
+                        os.kill(int(pid), 0)
+                except (OSError, ValueError):
+                    s["state"] = "dead"  # driver process gone (killed/crashed); not active
+                    active_dead = True
+                    continue
                 active.append({"run_id": r.parent.name, **{k: s.get(k) for k in ("milestone", "role", "phase", "pid")}})
     try:
         plan_ids = [m["id"] for m in load_plan(repo)["milestones"]]
@@ -365,7 +373,20 @@ def build_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def _sigterm_to_interrupt() -> None:
+    """kill <pid> ends a run like Ctrl-C: status "interrupted", lock released, stacks torn down."""
+    import signal
+
+    def handler(signum, frame):
+        raise KeyboardInterrupt
+    try:
+        signal.signal(signal.SIGTERM, handler)
+    except ValueError:  # not in the main thread
+        pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _sigterm_to_interrupt()
     from .models import ENGINE_NAMES  # noqa: F401
     args = build_parser().parse_args(argv)
     try:

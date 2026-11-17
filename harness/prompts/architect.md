@@ -35,7 +35,10 @@ Produce and commit:
    Each test must be traceable to a requirement (comment with the source line).
 6. HOLDOUT tests in `tests/holdout/` (a second, independent set of adversarial tests) and
    `scripts/holdout.sh <MILESTONE_ID>` that runs them. At freeze they are removed from the repo;
-   builders only ever see failing test ids and assertion messages.
+   builders only ever see failing test ids and assertion messages. Everything `verify.sh` runs
+   (including any self-tests of the gate scripts) must work while `tests/holdout/` is ABSENT:
+   after freeze the harness copies holdouts in only for `holdout.sh`. Prove it before you
+   finish: move `tests/holdout/` aside, run the gate self-tests, move it back.
 7. `.harness/plan.json`, exactly this shape:
    ```json
    {
