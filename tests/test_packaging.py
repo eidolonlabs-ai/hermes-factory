@@ -235,6 +235,9 @@ class SetupTests(unittest.TestCase):
         self.assertNotIn("harness-hook", cfg)
         self.assertIn("model: x", cfg)
         self.assertIn("hermes-agent-harness hooks", (worker / "config.yaml").read_text())  # not ours to edit
+        for pdir in (coder, worker):  # role file from the definition; the cloned one is kept
+            self.assertIn(hermes_setup.SOUL_MARK.format(name=pdir.name), (pdir / "SOUL.md").read_text())
+            self.assertEqual((pdir / "SOUL.md.pre-harness").read_text(), "cloned soul\n")
         calls = self.calls()
         self.assertEqual(sum(c.startswith("profile create harness-coder --clone") for c in calls), 1)
         self.assertIn("-p harness-coder plugins enable harness --no-allow-tool-override", calls)

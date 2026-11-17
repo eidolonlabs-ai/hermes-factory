@@ -61,7 +61,7 @@ hermes-agent-harness/
 ├─ hermes/plugin/                  ← Hermes plugin `harness` (installable on its own)
 │   ├─ plugin.yaml  __init__.py           ← pre_tool_call guard, pre_verify nudge
 │   └─ skills/{harness,harness-worker}/   ← also copied into the skill index by `harness setup`
-├─ profiles/{harness-coder,harness-worker}/profile.json   ← what `harness setup` creates
+├─ profiles/{harness-coder,harness-worker}/   ← profile.json + SOUL.md (role); `harness setup` applies them
 ├─ pyproject.toml                  ← `uv tool install` / `pipx`: `harness`, `harness-hook`
 ├─ contract/                       ← shared with sibling repos
 │   └─ guard-cases.json  plan.schema.json  result.schema.json

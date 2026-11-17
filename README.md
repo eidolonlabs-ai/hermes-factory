@@ -73,7 +73,7 @@ harness setup            # --dry-run to preview
 |---|---|---|
 | Engine | `harness` and `harness-hook` on PATH (Python stdlib only) | `uv tool install` / `pipx install` |
 | Skills | `harness`, `harness-worker` in your Hermes skill index | `harness setup` |
-| Profiles | `harness-coder` (Hermes as a coding engine) and `harness-worker` (kanban operator), cloned from your active profile so they have your model and keys | `harness setup` |
+| Profiles | `harness-coder` (Hermes as a coding engine) and `harness-worker` (kanban operator), cloned from your active profile so they have your model and keys, then given their role (`SOUL.md`; the cloned one is kept as `SOUL.md.pre-harness`) | `harness setup` |
 | Guard plugin | Hermes plugin `harness`, enabled in `harness-coder`: blocks writes to frozen and protected files, pushes and the like; blocks everything if the engine is missing | `harness setup` |
 | Project files | AGENTS.md, compose.yaml, verify/holdout scripts, `.harness/config.json` | `harness init` in each project repo |
 
