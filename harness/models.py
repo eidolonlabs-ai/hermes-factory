@@ -27,7 +27,7 @@ DEFAULT_CONFIG: dict = {
                 "hermes": {"profile": "harness-coder"}},
     "budgets": {"attempts": 3, "engine_timeout_min": 90, "run_timeout_min": 240,
                 "review_rounds": 2, "project_max_usd": 150},
-    "protected": ["tests/", "scripts/verify.sh", "contracts/", ".harness/", "AGENTS.md"],
+    "protected": ["tests/", "scripts/verify.sh", "scripts/holdout.sh", "contracts/", ".harness/", "AGENTS.md"],
     "stack": {"type": "compose", "file": "compose.yaml"},
     "merge": "ff",
     "notify": "hermes",
