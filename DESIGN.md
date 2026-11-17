@@ -19,7 +19,9 @@ build and review. Whether a milestone is done is decided by exit codes, never by
 - Uses Hermes natively: skills, profiles, shell hooks, kanban, cron, notifications,
   `delegate_task`, `clarify`, the browser.
 - Works for new projects ("Use this template") and existing repos (`harness init`).
-- Optional Docker Compose stack mode with safety rules for the system under test.
+- **Docker Compose is required.** The gate boots the real stack (database, API, web app, …)
+  and tests it end to end: integration tests hit real services, Playwright drives the real UI.
+  No mocked databases in gate tests.
 
 ### Non-goals
 - Team/org rollout, CI fan-out, signed evidence, promotion pipelines.
@@ -47,7 +49,7 @@ you, and does the judgement work (interview, visual check, explaining failures).
 hermes-agent-harness/
 ├─ README.md  DESIGN.md  CONTRACT.md  LICENSE (MIT)
 ├─ template/                       ← copied into a project by `harness init`
-│   ├─ AGENTS.md  CLAUDE.md -> AGENTS.md  SPEC.md
+│   ├─ AGENTS.md  CLAUDE.md -> AGENTS.md  SPEC.md  compose.yaml
 │   ├─ inputs/{HANDOFF,CLARIFICATIONS,ENVIRONMENT}.md
 │   ├─ scripts/verify.sh  scripts/holdout.sh
 │   └─ .harness/config.json
@@ -128,7 +130,7 @@ validates the JSON itself either way.
   "budgets": {"attempts": 3, "engine_timeout_min": 90, "run_timeout_min": 240,
               "review_rounds": 2, "project_max_usd": 150},
   "protected": ["tests/", "scripts/verify.sh", "contracts/", ".harness/", "AGENTS.md"],
-  "stack": {"type": "none"},
+  "stack": {"type": "compose", "file": "compose.yaml"},
   "merge": "ff",
   "notify": "hermes"
 }
@@ -140,7 +142,7 @@ Order, first failure stops (see `CONTRACT.md`):
 1. **Scope** — changed paths vs milestone `allowed_paths`; protected-path changes stop for a human.
 2. **Frozen** — `git diff <freeze_sha> -- <frozen>` empty and files present.
 3. **Hygiene** — no tracked `.env` or private keys; `.env` ignored.
-4. **Compose policy** — stack mode only (§8).
+4. **Compose policy** — §8.
 5. **Verify** — `verify.command`; `NOT_RUN` never counts as `PASS`; `require_tests`.
 6. **Holdouts** — copied in, run, removed in `finally`; builder sees only test ids and
    assertion messages (or counts only).
@@ -150,14 +152,26 @@ Order, first failure stops (see `CONTRACT.md`):
 
 Gate output: one JSON line + `result.json`; logs stay on disk, only tails go into prompts.
 
-## 8. Compose stack mode (optional)
+## 8. Compose stack (required)
 
-Unique `COMPOSE_PROJECT_NAME=<project>-<run>`; no published ports during gates (tests run
+Every project has a `compose.yaml` describing the whole running system — the services the
+app needs (Postgres, Neo4j, Redis, …), the app itself (API, web), and a `test` / `e2e`
+service holding the test toolchain (pytest, Playwright). `verify.sh` boots it with
+`docker compose up -d --build --wait`, runs integration tests against the live services and
+E2E tests against the live UI, then tears it down. A library with no services still gets a
+`test` service, so tests run in a clean, reproducible container rather than on the host.
+
+Safety rules, enforced by the runner: unique `COMPOSE_PROJECT_NAME=<project>-<run>`; no published ports during gates (tests run
 inside the compose network); policy check on `docker compose config --format json` (rejects
 `container_name`, `privileged`, host network, docker socket, bind mounts outside the
 worktree, protected project names); teardown in `finally` with a before/after container
 snapshot; artifacts copied out first. `harness preview` publishes ports for you and for the
 Hermes browser check.
+
+### Opt-out
+`"stack": {"type": "host", "reason": "iOS build needs Xcode"}` for projects that cannot run
+in Linux containers (iOS/macOS apps, Apple MLX). The reason is required, and every gate report
+for such a project says **not isolated**.
 
 ## 9. Safety model (honest)
 
