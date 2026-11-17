@@ -1,0 +1,54 @@
+# Compose stack for this project. The M0 architect replaces the example services.
+#
+# Rules (enforced by `harness gate`, see AGENTS.md):
+#   - no container_name, no published ports, no docker socket, no privileged, no bind mounts
+#     outside the repo; the harness sets COMPOSE_PROJECT_NAME per run.
+#   - every long-running service has a healthcheck so `up --wait` means "ready".
+#   - tests run inside the `test` and `e2e` services (profile "test"), against live services.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: app
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app_dev_password   # harness-audit-ignore (local-only dev credential)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # api:
+  #   build: ./api
+  #   environment:
+  #     DATABASE_URL: postgresql://app:app_dev_password@db:5432/app   # harness-audit-ignore
+  #   depends_on: {db: {condition: service_healthy}}
+  #   healthcheck: {test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"], interval: 3s, retries: 30}
+
+  # web:
+  #   build: ./web          # serves the UI and proxies /api -> http://api:8000
+  #   depends_on: {api: {condition: service_healthy}}
+  #   healthcheck: {test: ["CMD", "wget", "-qO-", "http://localhost:3000/"], interval: 3s, retries: 30}
+
+  test:
+    # Backend/integration test runner. Replace with the project's toolchain image.
+    image: python:3.12-slim
+    profiles: ["test"]
+    working_dir: /src
+    volumes:
+      - ./:/src:ro
+    depends_on:
+      db: {condition: service_healthy}
+    environment:
+      DATABASE_URL: postgresql://app:app_dev_password@db:5432/app   # harness-audit-ignore
+    command: ["python", "-c", "raise SystemExit('test service not configured yet: M0 replaces it')"]
+
+  # e2e:
+  #   image: mcr.microsoft.com/playwright:v1.49.0-noble
+  #   profiles: ["test"]
+  #   working_dir: /e2e
+  #   volumes: ["./e2e:/e2e"]
+  #   environment: {BASE_URL: "http://web:3000"}
+  #   depends_on: {web: {condition: service_healthy}}
+  #   command: ["npx", "playwright", "test"]

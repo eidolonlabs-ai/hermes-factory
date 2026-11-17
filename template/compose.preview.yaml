@@ -1,0 +1,7 @@
+# Overlay used only by `harness preview` (never during gates): publishes ports for humans
+# and the Hermes browser check. Adjust to the services M0 creates.
+services:
+  db:
+    ports: []
+  # web:
+  #   ports: ["3000"]   # random free host port; `harness preview` prints the URL
