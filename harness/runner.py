@@ -48,7 +48,8 @@ def _register_active(c, engine: str, env: dict):
     d.mkdir(parents=True, exist_ok=True)
     f = d / f"{c.run_id}.json"
     f.write_text(json.dumps({"pid": os.getpid(), "run_id": c.run_id, "root": str(c.ws.path),
-                             "frozen_file": env["HARNESS_FROZEN_FILE"]}))
+                             "frozen_file": env["HARNESS_FROZEN_FILE"],
+                             "milestone": env.get("HARNESS_MILESTONE", "")}))
     return f
 
 

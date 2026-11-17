@@ -79,11 +79,14 @@ def _check_rel(rel: str, ctx: GuardContext, is_dir: bool = False) -> Decision:
 
     # harness control directory (receipts, plans, run state)
     cd = ctx.control_dir.strip("/").lower()
+    # M0 (contract phase) exists to write the plan and the holdouts; config stays protected.
+    if ctx.contract_phase and not is_dir and low == f"{cd}/plan.json":
+        return ALLOW
     if cd and (low == cd or low.startswith(cd + "/") or f"/{cd}/" in f"/{low}/"):
         return Decision("deny", f"Blocked direct modification of harness control state: {rel}")
 
     # holdout tests: marker anywhere in the path ("holdout/" must be at a component start)
-    for m in ctx.holdout_markers:
+    for m in ([] if ctx.contract_phase else ctx.holdout_markers):
         ml = m.lower()
         hay = "/" + (as_dir.lower() if is_dir else low)
         needle = ml if not ml.endswith("/") else ml

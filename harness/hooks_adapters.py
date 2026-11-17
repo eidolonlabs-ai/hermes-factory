@@ -80,7 +80,8 @@ def _contexts(payload: dict, env) -> list[GuardContext]:
     ctxs = []
     for e in _active_runs():
         ctxs.append(_context({**payload, "cwd": e["root"]},
-                             {**env, "HARNESS_ROOT": e["root"], "HARNESS_FROZEN_FILE": e["frozen_file"]}))
+                             {**env, "HARNESS_ROOT": e["root"], "HARNESS_FROZEN_FILE": e["frozen_file"],
+                              "HARNESS_MILESTONE": e.get("milestone", "")}))
     return ctxs or [_context(payload, env)]
 
 
@@ -103,6 +104,7 @@ def _context(payload: dict, env) -> GuardContext:
             env = {**env, "HARNESS_ROOT": env.get("HARNESS_ROOT") or found[0], "HARNESS_FROZEN_FILE": found[1]}
     root = env.get("HARNESS_ROOT") or cwd
     return GuardContext(root=root, control_dir=".harness/", frozen=_frozen(root, env),
+                        contract_phase=env.get("HARNESS_MILESTONE") == "M0",
                         unattended=env.get("HARNESS_UNATTENDED", "1") != "0")
 
 

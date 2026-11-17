@@ -141,3 +141,28 @@ class TestAdapters(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ContractPhaseTests(unittest.TestCase):
+    """M0 must be able to write .harness/plan.json and tests/holdout/ (found in a live run)."""
+
+    def test_m0_allows_plan_and_holdouts_but_not_config(self):
+        from harness.types import GuardContext
+        from harness import guard
+        m0 = GuardContext(root="/repo", contract_phase=True)
+        later = GuardContext(root="/repo")
+        self.assertEqual(guard.check_write(".harness/plan.json", m0).decision, "allow")
+        self.assertEqual(guard.check_write("tests/holdout/test_x.py", m0).decision, "allow")
+        self.assertEqual(guard.check_shell("mkdir -p tests/holdout && echo x > tests/holdout/a.py", m0).decision, "allow")
+        self.assertEqual(guard.check_write(".harness/config.json", m0).decision, "deny")
+        self.assertEqual(guard.check_write(".harness/plan.json", later).decision, "deny")
+        self.assertEqual(guard.check_write("tests/holdout/test_x.py", later).decision, "deny")
+
+    def test_adapter_sets_contract_phase_from_milestone(self):
+        import json
+        from harness import hooks_adapters
+        raw = json.dumps({"tool_name": "Write", "tool_input": {"file_path": "/repo/.harness/plan.json"}, "cwd": "/repo"})
+        _, rc = hooks_adapters.claude_pre_tool_use(raw, {"HARNESS_ROOT": "/repo", "HARNESS_MILESTONE": "M0"})
+        self.assertEqual(rc, 0)
+        _, rc = hooks_adapters.claude_pre_tool_use(raw, {"HARNESS_ROOT": "/repo", "HARNESS_MILESTONE": "M1"})
+        self.assertEqual(rc, 2)
