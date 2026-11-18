@@ -1,4 +1,4 @@
-# hermes-agent-harness
+# Hermes Harness
 
 Hand [Hermes Agent](https://hermes-agent.nousresearch.com) a spec, answer its questions,
 approve a plan, and let it build your app for hours, milestone by milestone, without clicking
@@ -18,8 +18,8 @@ you ──spec──► Hermes ── intake questions ──► you
 ```
 
 Part of a family of platform-native harnesses that share one [`CONTRACT.md`](CONTRACT.md):
-this one (Hermes), [`codex-harness-template`](https://github.com/theRealMarkCastillo/codex-harness-template)
-(Codex), and [`agy-software-factory`](https://github.com/theRealMarkCastillo/agy-software-factory)
+this one (Hermes), [`codex-harness`](https://github.com/theRealMarkCastillo/codex-harness)
+(Codex), and [`antigravity-harness`](https://github.com/theRealMarkCastillo/antigravity-harness)
 (Antigravity).
 
 ## Why
@@ -57,7 +57,7 @@ their own vendor's code that the other vendor found. See [`examples/chronograph`
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/theRealMarkCastillo/hermes-agent-harness/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/theRealMarkCastillo/hermes-harness/main/install.sh | bash
 harness doctor
 ```
 
@@ -65,7 +65,7 @@ That installs the engine with [uv](https://docs.astral.sh/uv/) (or pipx) and run
 `harness setup`. The same thing by hand:
 
 ```bash
-uv tool install git+https://github.com/theRealMarkCastillo/hermes-agent-harness
+uv tool install git+https://github.com/theRealMarkCastillo/hermes-harness
 harness setup            # --dry-run to preview
 ```
 
@@ -82,7 +82,7 @@ Your default profile's config is not modified; it only receives the two skills.
 Other ways in:
 
 - **Plugin only** (engine already installed; you manage the profile yourself):
-  `hermes -p harness-coder plugins install theRealMarkCastillo/hermes-agent-harness/hermes/plugin --enable`.
+  `hermes -p harness-coder plugins install theRealMarkCastillo/hermes-harness/hermes/plugin --enable`.
   The guard acts only in a profile named `harness-coder`; enabled anywhere else it does nothing.
 - **From a checkout** (to hack on it): `git clone` then `./install.sh` for an editable install.
 - **Without Hermes:** the engine alone drives `claude` and `codex`; `harness setup` skips what

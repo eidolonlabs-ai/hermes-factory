@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install or update hermes-agent-harness for the current user. Idempotent.
 #
-#   curl -fsSL https://raw.githubusercontent.com/theRealMarkCastillo/hermes-agent-harness/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/theRealMarkCastillo/hermes-harness/main/install.sh | bash
 #   ./install.sh              from a checkout: editable install, edits take effect at once
 #   ./install.sh --dry-run    print what would change
 #
@@ -11,7 +11,7 @@
 #      guard plugin. Your default profile's config is never modified.
 set -euo pipefail
 
-REPO_URL="git+https://github.com/theRealMarkCastillo/hermes-agent-harness"
+REPO_URL="git+https://github.com/theRealMarkCastillo/hermes-harness"
 DRY=0
 for a in "$@"; do [[ "$a" == "--dry-run" ]] && DRY=1; done
 say() { echo "==> $*"; }

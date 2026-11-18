@@ -34,7 +34,7 @@ GUARD_PROFILES = ("harness-coder",)
 _RUN_ENV = ("HARNESS_ROOT", "HARNESS_FROZEN_FILE")
 _TIMEOUT_S = 15
 _INSTALL_HINT = ("install the engine: uv tool install "
-                 "git+https://github.com/theRealMarkCastillo/hermes-agent-harness")
+                 "git+https://github.com/theRealMarkCastillo/hermes-harness")
 
 
 def _block(message: str) -> dict:

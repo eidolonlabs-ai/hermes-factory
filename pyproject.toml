@@ -14,7 +14,7 @@ authors = [{ name = "Mark Castillo" }]
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/theRealMarkCastillo/hermes-agent-harness"
+Homepage = "https://github.com/theRealMarkCastillo/hermes-harness"
 
 [project.scripts]
 harness = "harness.cli:main"
