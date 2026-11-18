@@ -8,7 +8,7 @@ platforms: [macos, linux]
 metadata:
   hermes:
     tags: [Software-Factory, Codex, Claude-Code, Orchestration, Docker]
-    related_skills: [factory-worker, codex, claude-code]
+    related_skills: [factory-pipeline, factory-setup, factory-intake, factory-plan, factory-build, factory-verify, factory-review, factory-status, factory-worker, codex, claude-code]
 ---
 
 # factory: unattended milestone builds, Hermes orchestrates
@@ -18,6 +18,8 @@ Codex or Hermes itself (profile `factory-coder`) write the code; a different ven
 each milestone; the `factory` CLI decides pass/fail from exit codes on a real Docker Compose
 stack. You (Hermes) talk to the user, run the CLI, watch, and report. You never edit project
 code yourself and never decide "done" yourself. Rules: `CONTRACT.md`; design: `DESIGN.md`.
+
+*(For the unified 5-phase skill family shared across Antigravity, Claude Code, Codex, and Hermes, see `factory-pipeline` and stage skills `factory-setup`, `factory-intake`, `factory-plan`, `factory-build`, `factory-verify`, `factory-review`, and `factory-status`.)*
 
 ## When to Use
 - "Build this app/feature from this spec, let it run, ping me at milestones"
@@ -36,10 +38,8 @@ code yourself and never decide "done" yourself. Rules: `CONTRACT.md`; design: `D
 2. **Project**: `cd REPO && git init -b main` if needed; `factory init` (copies the template:
    AGENTS.md, compose.yaml, scripts, inputs/). Put the user's spec in `inputs/HANDOFF.md`.
    Commit. Projects that cannot run in Linux containers: `factory init --stack host --reason "..."`.
-3. **Intake**: `factory intake inputs/HANDOFF.md --engine codex` (read-only architect).
-   Ask the user the blocking questions with `clarify` (one form, ≤5 questions per call, your
-   recommended answer first). Write answers to `inputs/CLARIFICATIONS.md`, host constraints to
-   `inputs/ENVIRONMENT.md`. Commit. `factory note "intake answers"`.
+3. **Intake (Shift-Left Pushback)**: `factory intake inputs/HANDOFF.md --engine codex` (read-only architect).
+   Audit `inputs/HANDOFF.md` for sufficiency; actively push back (`needs_clarification`) when requirements, failure modes, or the 4-Part State & Edge-Case Matrix are incomplete—never wave thin prompts into M0. Ask the user the blocking questions with `clarify` (one form, ≤5 questions per call, your recommended answer first). Write answers to `inputs/CLARIFICATIONS.md`, host constraints to `inputs/ENVIRONMENT.md`. Commit. `factory note "intake answers"`.
 4. **M0 contract**: `factory run --milestone M0 --role build --engine claude --review-engine codex --detach`,
    then a background watcher: `terminal(background=true, notify=true)` running
    `factory wait RUN_ID --max 36000`. End your turn.

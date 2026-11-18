@@ -5,11 +5,11 @@ version: 0.2.0
 author: Mark Castillo
 homepage: https://github.com/eidolonlabs-ai/hermes-factory
 description: >
-  Hermes side of hermes-agent-factory (unattended milestone builds with an
+  Hermes side of hermes-factory (unattended milestone builds with an
   external gate). Guards every tool call of a factory coding run (frozen
   files, protected paths, no push), nudges the coder to run the milestone's
-  verify script before finishing, and bundles the `factory` and
-  `factory-worker` skills. Needs the `factory` engine on PATH:
+  verify script before finishing, and bundles the 8 unified `factory-*`
+  skills plus `factory` and `factory-worker`. Needs the `factory` engine on PATH:
   `uv tool install git+https://github.com/eidolonlabs-ai/hermes-factory`,
   then `factory setup`.
 requires_hermes: ">=0.23.0"

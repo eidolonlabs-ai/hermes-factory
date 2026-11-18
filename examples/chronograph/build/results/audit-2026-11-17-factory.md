@@ -1,4 +1,4 @@
-# ChronoGraph audit: hermes-agent-harness build (2026-11-17)
+# ChronoGraph audit: hermes-factory build (2026-11-17)
 
 **Comparable result (stripped snapshot, same treatment as the forge audit): 4 unique findings,
 1 high by Codex's rating.** Two audit rounds were run:
@@ -6,20 +6,20 @@
 | Round | Snapshot | Unique | High |
 |---|---|---|---|
 | 1 | full repo, including `docs/reviews/` and `RFI.md` (not comparable) | 4 | 1 |
-| 2 | **stripped** of `docs/reviews/`, `RFI.md`, `.harness/`, `inputs/` (comparable to forge's) | 4 | 1 |
+| 2 | **stripped** of `docs/reviews/`, `RFI.md`, `.factory/`, `inputs/` (comparable to forge's) | 4 | 1 |
 | both | union | 5 | 1 |
 
 Round 2 found the same dual-write, backdated re-assertion and microsecond issues, dropped the
 time-travel colouring finding, and added one confirmed low: the ingest drawer's example
 `RETRACT: web-01 DEPENDS_ON db-01` uses a syntax the extractor ignores (live: 0 triples).
-Raw output: `findings-2026-11-17-harness-stripped.json`.
+Raw output: `findings-2026-11-17-factory-stripped.json`.
 
 ## Round 1 (full repo)
 
 Same cold, read-only audit as `audit-2026-11-16.md` (same `prompt.md` and `schema.json`), run
-by Codex (high) and Claude Opus (high) on a clean clone of the harness build at `0d50bd6`
+by Codex (high) and Claude Opus (high) on a clean clone of the factory build at `0d50bd6`
 (after M5). The requirement files were placed at the repo root as in the earlier audits.
-Raw output: `findings-2026-11-17-harness.json`.
+Raw output: `findings-2026-11-17-factory.json`.
 
 ## Deduplicated findings: 4 (Codex 2, Claude 3, 1 overlap)
 
@@ -36,13 +36,13 @@ Raw output: `findings-2026-11-17-harness.json`.
 |---|---|---|
 | Antigravity (`/goal`, `/run-workflow`) | 13 | 2 (both live-verified) |
 | Hermes forge (2026-11-16) | 7 | 0 |
-| **hermes-agent-harness** | **4** | **1 by Codex's rating**: the same dual-write issue rated medium in the Antigravity audit; not live-verified |
+| **hermes-factory** | **4** | **1 by Codex's rating**: the same dual-write issue rated medium in the Antigravity audit; not live-verified |
 
 Finding 1 is the class Antigravity's #3 also had ("Neo4j writes commit before Postgres").
 Finding 2 is the class of Antigravity's #10/#11 (backdated assertions of an existing object).
 
 ## Notes
 - Both audits finished in about 4 minutes, much faster than the previous round.
-- The harness build has more tests to read (171 integration, 42 holdout, 47 Playwright) and
+- The factory build has more tests to read (171 integration, 42 holdout, 47 Playwright) and
   a written decision log (`RFI.md`, 37 entries) that the auditors used to separate intended
   behaviour from bugs.

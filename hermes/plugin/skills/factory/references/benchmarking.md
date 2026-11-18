@@ -1,6 +1,6 @@
 # Benchmarking a factory build against another tool
 
-Used for ChronoGraph (Antigravity vs Hermes forge 2026-11-16, vs hermes-agent-factory 2026-11-17). Load when the user wants a
+Used for ChronoGraph (Antigravity vs Hermes forge 2026-11-16, vs hermes-factory 2026-11-17). Load when the user wants a
 fair head-to-head or a quality score for a finished build.
 
 ## Fair inputs
@@ -64,5 +64,5 @@ fair head-to-head or a quality score for a finished build.
   during the build; 12/12 runs passed the gate first try; ~3h15m run time.
 - Auditor overlap was low (4 and 0): counts are lower bounds.
 - Follow-up M6 card fixed 5 findings in 31 min with one more found by review.
-- hermes-agent-factory: 6 interventions (3 were factory bugs on its first real run), 4
+- hermes-factory: 6 interventions (3 were factory bugs on its first real run), 4
   remaining findings (1 high by Codex's rating), M4/M5 passed first try, ~3h30m build time.

@@ -161,8 +161,17 @@ def policy_check(worktree: str, compose_file: str, project: str, protected_proje
     return Check("compose-policy", "PASS", "compose policy ok", duration_s=time.time() - t0)
 
 
+_PEER_FACTORY_RE = re.compile(r"-[0-9a-f]{8}$")
+
+
+def is_peer_factory_project(label: str) -> bool:
+    """True for concurrent sibling factory gate or preview Compose projects."""
+    s = str(label or "")
+    return s.startswith("factory-") or bool(_PEER_FACTORY_RE.search(s)) or s.endswith("-preview")
+
+
 def snapshot_foreign(project_name: str, timeout_s: float = 30) -> set[str]:
-    """'<id>:<state>' for all containers NOT in the given compose project."""
+    """'<id>:<state>' for all containers NOT in the given compose or peer factory projects."""
     r = subprocess.run(["docker", "ps", "-a", "--no-trunc", "--format", "json"],
                        capture_output=True, text=True, timeout=timeout_s)
     if r.returncode != 0:
@@ -179,11 +188,12 @@ def snapshot_foreign(project_name: str, timeout_s: float = 30) -> set[str]:
         labels = c.get("Labels") or ""
         if isinstance(labels, str):
             labels = dict(kv.split("=", 1) for kv in labels.split(",") if "=" in kv)
-        if labels.get("com.docker.compose.project") == project_name:
+        proj = labels.get("com.docker.compose.project", "")
+        if proj == project_name or is_peer_factory_project(proj):
             continue
         # id:state:name:project — id and state decide; name/project make reports traceable
         out.add(f"{c.get('ID', '')}:{c.get('State', '')}:{c.get('Names', '')}:"
-                f"{labels.get('com.docker.compose.project', '-')}")
+                f"{proj or '-'}")
     return out
 
 

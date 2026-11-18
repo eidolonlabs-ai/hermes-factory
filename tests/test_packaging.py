@@ -77,7 +77,21 @@ class PluginTests(unittest.TestCase):
         ctx.register_skill.side_effect = lambda name, path: skills.append((name, Path(path).is_file()))
         self.plugin.register(ctx)
         self.assertEqual(hooks, ["pre_tool_call", "pre_verify"])
-        self.assertEqual(skills, [("factory", True), ("factory-worker", True)])
+        self.assertEqual(
+            skills,
+            [
+                ("factory", True),
+                ("factory-build", True),
+                ("factory-intake", True),
+                ("factory-pipeline", True),
+                ("factory-plan", True),
+                ("factory-review", True),
+                ("factory-setup", True),
+                ("factory-status", True),
+                ("factory-verify", True),
+                ("factory-worker", True),
+            ],
+        )
 
     def test_inactive_outside_factory_runs(self):
         with self.env(FACTORY_HOOK_BIN="/nonexistent/factory-hook"):

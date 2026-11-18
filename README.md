@@ -17,23 +17,60 @@ you ──spec──► Hermes ── intake questions ──► you
                              verify.sh on the live stack · holdouts · diff audit · candidate hash
 ```
 
-Part of a family of platform-native factoryes that share one [`CONTRACT.md`](CONTRACT.md):
-this one (Hermes), [`codex-factory`](https://github.com/eidolonlabs-ai/codex-factory)
-(Codex), and [`antigravity-factory`](https://github.com/eidolonlabs-ai/antigravity-factory)
-(Antigravity).
+Part of a family of platform-native factories that share one [`CONTRACT.md`](CONTRACT.md):
+this one (Hermes), [`antigravity-factory`](https://github.com/eidolonlabs-ai/antigravity-factory)
+(Antigravity), [`claude-factory`](https://github.com/eidolonlabs-ai/claude-factory)
+(Claude Code), and [`codex-factory`](https://github.com/eidolonlabs-ai/codex-factory)
+(Codex). See [5 entry points](docs/entry-paths.md) and the unified skills (`factory-pipeline`,
+`factory-setup`, `factory-intake`, `factory-plan`, `factory-build`, `factory-verify`,
+`factory-review`, `factory-status`).
 
-## Why
+## Why Prompts & Skills Alone Fail vs. This Software Factory
 
-Unattended coding agents fail in four ways: they stop early and claim success, they drown in
-logs, they "fix" tests instead of code, and they block on permission prompts. This factory
-answers each one outside the agent:
+Prompts and `SKILL.md` guides alone are **probabilistic**—over multi-hour builds, coding agents stop early and claim "done", drown in verbose test logs, weaken failing tests to turn builds green, or stall on permission prompts. **Hermes Factory** pairs multi-vendor orchestration (Claude Code, Codex, Hermes) with **deterministic runtime physics** outside the agent's session (`CONTRACT.md`):
 
-| Failure | What the factory does |
-|---|---|
-| "Done" without proof | An external gate re-runs everything; the agent's report is never evidence. `NOT_RUN` is never `PASS`. |
-| Weakened tests | Tests are frozen at plan approval (hash-checked), some are **holdouts** kept out of the repo, and an in-agent guard blocks edits to frozen files. |
-| Mocks instead of reality | `verify.sh` boots the whole stack in Docker Compose (database, API, web) and runs integration and Playwright E2E tests against it. |
-| Permission prompts | Each run happens in a disposable git worktree; engines run with bypass inside that worktree only. Merge is fast-forward on green. |
+| Layer | Nature | What It Provides Here |
+|---|---|---|
+| **1. Prompt Engineering** | Probabilistic (Single Turn) | 8 unified stage skills (`factory-pipeline` through `factory-status`) + `factory` / `factory-worker` kanban operator |
+| **2. Context Engineering** | Probabilistic (Session State) | `template/AGENTS.md`, `SPEC.md`, `inputs/{HANDOFF,CLARIFICATIONS,ENVIRONMENT}.md`, and log-to-file tails |
+| **3. Factory / Harness Engineering** | Deterministic (Runtime Physics) | External `factory gate` exit codes on real Docker Compose stacks (`NOT_RUN !== PASS`), frozen file hashes, **holdout** tests stored outside the repo, in-agent `factory-hook` guards, disposable git worktrees, and cross-vendor cold-context reviews |
+
+| Failure | Why Prompts/Skills Alone Fail | How Hermes Factory Solves It Deterministically |
+|---|---|---|
+| **"Done" without proof** | Agent reports "all tests pass" without running real services | An external gate re-runs everything (`scripts/verify.sh`); the agent's report is never evidence. `NOT_RUN` is never `PASS`. |
+| **Context window rot** | Long Docker builds and test logs push out requirements | Outputs go to log files under `${FACTORY_ARTIFACTS:-/tmp}`; runners pass only bounded tails across attempts and spawn fresh worktrees per milestone. |
+| **Weakened tests** | Builders edit failing assertions or mock out databases | Tests are frozen at Checkpoint 1 (hash-checked), **holdouts** live outside the repo, an in-agent guard blocks writes to frozen files, and `verify.sh` boots a real Compose stack (Postgres, Neo4j, API, web, Playwright). |
+| **Permission prompts** | Long unattended runs block on interactive confirmations | Each milestone runs in a disposable git worktree; engines run with bypass inside that worktree only, guarded by `factory-hook`. Fast-forward merge happens only on green. |
+
+## Shift-Left Engineering: Built-In Spec Pushback
+
+Multi-hour unattended runs (`factory pipeline`) only finish cleanly when ambiguity is resolved **upfront**:
+
+- **Mandatory Intake Pushback (`factory-intake`)**: If `inputs/HANDOFF.md` is vague, omits error handling, or leaves any **4-Part State & Edge-Case Matrix** domain undefined (out-of-order/duplicates, concurrency/row locks & `AbortController`, UTC/`as_of` clock bounds, dual-write atomicity), read-only `factory intake` **pushes back** (`needs_clarification`), and Hermes interviews you via `clarify` (recording answers in `inputs/CLARIFICATIONS.md`) before M0 starts.
+- **Checkpoint 1 Contract & Test Freeze (`factory-plan` → `factory-build`)**: M0 authors `SPEC.md`, `compose.yaml` healthchecks, `scripts/verify.sh`, **Milestone 1.5 Frozen Adversarial Tests**, and `tests/holdout/`—all audited by a cross-vendor reviewer—before `factory freeze` unlocks `M1..Mn` builds.
+
+## How to Choose Your Entry Point & Stage
+
+Start with **`factory-pipeline`** (or **`factory`**) for end-to-end orchestration. Invoke an individual stage skill directly only when its upstream prerequisites already exist (see [5 entry points](docs/entry-paths.md)):
+
+| Entry Point | Minimum Inputs | When `factory-intake` Pushes Back |
+|---|---|---|
+| **1. New / Greenfield App** | Users, core journeys, stack constraints, `inputs/HANDOFF.md` | Undefined schemas/endpoints or unresolved 4-Part Matrix edge cases |
+| **2. Existing / Brownfield Repo** | Repo path, goal, conventions, test commands, known failures | Missing `scripts/verify.sh` checks or unstated stack constraints |
+| **3. Bug Fix (Reproduce-First)** | Expected vs. actual behavior, repro steps, logs | Missing reproduction steps or skipping a failing test (`factory plan add`) |
+| **4. Feature / Behavior Change** | Desired behavior, exemplar files, compatibility constraints | Unclear schema/API deltas or unmapped milestone acceptance |
+| **5. Refactor / Migration** | Target modules, invariants, verification scripts | Missing baseline verification or overlapping `allowed_paths` |
+
+| Phase | Skill | When to Invoke Directly |
+|---|---|---|
+| **All (E2E)** | `factory-pipeline` (or `factory`) | Guided Phases 0–4 unattended orchestration with checkpoints and notifications |
+| **Phase 0** | `factory-setup` | Checking auth/Docker (`factory doctor`), installing profiles (`factory setup`), or `factory init` |
+| **Phase 1** | `factory-intake` | Auditing a raw spec (`benchmarks/chronograph/input/original.md`) via read-only `factory intake` + `clarify` |
+| **Phase 2** | `factory-plan` | Clarifications recorded; ready for M0 contracts, Milestone 1.5 + holdout tests, Checkpoint 1, and `factory freeze` |
+| **Phase 3** | `factory-build` | Plan frozen; running `factory pipeline`, `factory run --milestone <M>`, or kanban `factory-worker` |
+| **Phase 4A** | `factory-verify` | Running external `factory gate` (`NOT_RUN !== PASS`) + `factory preview` browser checks (`1440x900`, `390x844`) |
+| **Phase 4B** | `factory-review` | Cross-vendor cold-context review (`--review-engine cross`, **Reproduce Before Fixing**) or `templates/audit/` |
+| **Inspect** | `factory-status` | Checking `factory status`, `result.json`, `factory note` interventions, and `RFI.md` |
 
 Cross-vendor review matters: in the ChronoGraph benchmark, single-vendor audits missed bugs in
 their own vendor's code that the other vendor found. See [`examples/chronograph`](examples/chronograph).
@@ -44,7 +81,7 @@ their own vendor's code that the other vendor found. See [`examples/chronograph`
 |---|---|---|
 | Antigravity | 13 (2) | 8 |
 | Hermes forge (predecessor) | 7 (0) | 2 (+1) |
-| **hermes-agent-factory** | **4 (1)** | 6, 3 of them factory bugs found and fixed during this first run |
+| **hermes-factory** | **4 (1)** | 6, 3 of them factory bugs found and fixed during this first run |
 
 ## Requirements
 
@@ -72,12 +109,12 @@ factory setup            # --dry-run to preview
 | Piece | What you get | Installed by |
 |---|---|---|
 | Engine | `factory` and `factory-hook` on PATH (Python stdlib only) | `uv tool install` / `pipx install` |
-| Skills | `factory`, `factory-worker` in your Hermes skill index | `factory setup` |
+| Skills | `factory-pipeline`, `factory-setup`, `factory-intake`, `factory-plan`, `factory-build`, `factory-verify`, `factory-review`, `factory-status`, plus `factory` and `factory-worker` in your Hermes skill index | `factory setup` |
 | Profiles | `factory-coder` (Hermes as a coding engine) and `factory-worker` (kanban operator), cloned from your active profile so they have your model and keys, then given their role (`SOUL.md`; the cloned one is kept as `SOUL.md.pre-factory`) | `factory setup` |
 | Guard plugin | Hermes plugin `factory`, enabled in `factory-coder`: blocks writes to frozen and protected files, pushes and the like; blocks everything if the engine is missing | `factory setup` |
 | Project files | AGENTS.md, compose.yaml, verify/holdout scripts, `.factory/config.json` | `factory init` in each project repo |
 
-Your default profile's config is not modified; it only receives the two skills.
+Your default profile's config is not modified; it only receives the factory skills.
 
 Other ways in:
 
@@ -88,8 +125,8 @@ Other ways in:
 - **Without Hermes:** the engine alone drives `claude` and `codex`; `factory setup` skips what
   it cannot find.
 
-Update: `uv tool upgrade hermes-agent-factory && factory setup`. Remove:
-`uv tool uninstall hermes-agent-factory`, `hermes profile delete factory-coder` (and
+Update: `uv tool upgrade hermes-factory && factory setup`. Remove:
+`uv tool uninstall hermes-factory`, `hermes profile delete factory-coder` (and
 `factory-worker`), and delete `~/.hermes/skills/software-factory/factory*`.
 
 ## Use
@@ -124,13 +161,29 @@ For overnight runs or phone intake, use kanban mode: one card per milestone for 
 |---|---|
 | `factory/` | the CLI (Python stdlib only): gate, runner, pipeline, guard, compose policy, audit-diff |
 | `template/` | files `factory init` adds to a project |
-| `hermes/plugin/` | Hermes plugin: guard and verify hooks, the two skills |
+| `hermes/plugin/` | Hermes plugin (`plugin.yaml`, `__init__.py`, `README.md`): guard/verify hooks + the 8 unified `factory-*` skills plus `factory` and `factory-worker` |
 | `profiles/` | the Hermes profiles `factory setup` creates |
 | `contract/` | shared guard test vectors and JSON schemas |
-| `CONTRACT.md` | rules shared with the sibling factoryes |
+| `CONTRACT.md` | rules shared with the sibling factories |
 | `DESIGN.md` | architecture and decisions |
-| `examples/chronograph/` | intake + build benchmarks with results |
+| `docs/entry-paths.md` | 5 developer entry points & 5-phase workflow |
+| `benchmarks/chronograph/` | official intake & build benchmark (`original.md`) |
+| `examples/chronograph/` | recorded intake + build benchmark runs & audits |
 | `tests/` | `python3 -m unittest discover -s tests` (fake engines + a real compose stack) |
+
+## Plugin Packaging, Validation & Marketplace Distribution
+
+`hermes/plugin/` is packaged directly inside Python wheels (`factory/_data/plugin` via `pyproject.toml`) **and** structured as a standalone `hermes plugins install` bundle with zero duplicated helper scripts inside each skill subfolder (skills invoke the shared `factory` / `factory-hook` CLI on `PATH`):
+
+- **Validate the plugin locally** before pushing or catalog submission:
+  ```bash
+  hermes plugins validate ./hermes/plugin
+  hermes plugins doctor ./hermes/plugin
+  ```
+- **Install from GitHub / catalog**:
+  - Full engine + skills + profiles (recommended): `curl -fsSL https://raw.githubusercontent.com/eidolonlabs-ai/hermes-factory/main/install.sh | bash` (or `uv tool install git+https://github.com/eidolonlabs-ai/hermes-factory && factory setup`).
+  - Plugin subdirectory directly: `hermes -p factory-coder plugins install eidolonlabs-ai/hermes-factory/hermes/plugin --enable` (when `factory` / `factory-hook` are already on `PATH`).
+- **Implementation parallelism & slices**: Instead of concurrent same-repo file slices, `hermes-factory` isolates sequential milestones in disposable worktrees while specializing roles across engines (`"roles": {"architect": "claude", "backend": "codex", "ui": "claude", "review": "cross"}`), supports multi-card / multi-repo concurrency via `factory-worker` Kanban cards, and fans out read-only audits across engines (`factory audit --engines claude,codex`).
 
 ## Honest limits
 

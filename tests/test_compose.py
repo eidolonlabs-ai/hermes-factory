@@ -73,6 +73,15 @@ class PolicyTests(unittest.TestCase):
     def test_protected(self):
         self.assertTrue(v({"name": "chronograph", "services": {}}, prot=["chronograph"]))
 
+    def test_peer_factory_project_exemption(self):
+        self.assertTrue(C.is_peer_factory_project("factory-20261118xyz"))
+        self.assertTrue(C.is_peer_factory_project("factory-agy-1234abcd"))
+        self.assertTrue(C.is_peer_factory_project("chronograph-a1b2c3d4"))
+        self.assertTrue(C.is_peer_factory_project("chronograph-preview"))
+        self.assertFalse(C.is_peer_factory_project("chronograph"))
+        self.assertFalse(C.is_peer_factory_project("my-postgres"))
+        self.assertFalse(C.is_peer_factory_project(""))
+
 
 class NameTests(unittest.TestCase):
     def test_sanitize(self):

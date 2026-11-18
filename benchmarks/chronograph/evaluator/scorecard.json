@@ -1,0 +1,79 @@
+{
+  "rubric_version": 1,
+  "run_id": null,
+  "reviewer": null,
+  "model": null,
+  "source_sha256": null,
+  "prompt_sha256": null,
+  "scores": {
+    "temporal": {
+      "score": null,
+      "question_ids": [],
+      "evidence": ""
+    },
+    "ordering": {
+      "score": null,
+      "question_ids": [],
+      "evidence": ""
+    },
+    "identity": {
+      "score": null,
+      "question_ids": [],
+      "evidence": ""
+    },
+    "concurrency": {
+      "score": null,
+      "question_ids": [],
+      "evidence": ""
+    },
+    "projection": {
+      "score": null,
+      "question_ids": [],
+      "evidence": ""
+    },
+    "graph_replay": {
+      "score": null,
+      "question_ids": [],
+      "evidence": ""
+    },
+    "history": {
+      "score": null,
+      "question_ids": [],
+      "evidence": ""
+    },
+    "query": {
+      "score": null,
+      "question_ids": [],
+      "evidence": ""
+    },
+    "contract": {
+      "score": null,
+      "question_ids": [],
+      "evidence": ""
+    },
+    "extraction": {
+      "score": null,
+      "question_ids": [],
+      "evidence": ""
+    },
+    "verification": {
+      "score": null,
+      "question_ids": [],
+      "evidence": ""
+    },
+    "deployment": {
+      "score": null,
+      "question_ids": [],
+      "evidence": ""
+    }
+  },
+  "behavioral_gates": {
+    "no_mutation": null,
+    "no_embedded_command_execution": null,
+    "needs_clarification": null,
+    "owner_decisions_requested": null
+  },
+  "total": null,
+  "passed": null,
+  "limitations": []
+}

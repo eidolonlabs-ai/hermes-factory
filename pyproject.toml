@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "hermes-agent-factory"
+name = "hermes-factory"
 dynamic = ["version"]
 description = "Unattended milestone builds: Hermes orchestrates Claude Code / Codex, an external gate decides."
 readme = "README.md"

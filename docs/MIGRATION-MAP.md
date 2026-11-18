@@ -1,15 +1,15 @@
-# Feature map: what hermes-agent-factory adopts from its siblings
+# Feature map: what hermes-factory adopts from its siblings
 
 The sibling repos stay independent and platform-native (see `CONTRACT.md`). This map records
 which of their capabilities this Hermes factory reimplements, and where. Rows marked
 "plat/antigravity" or "plat/codex" stay in the sibling repo and are listed for reference only.
-Source inventories: agy-software-factory @ fc268cf (Node ≥20, 39 tests passing),
-codex-factory-template @ 9bab498 (Python 3.11+, 33 tests passing), forge (~/forge, Python).
+Historical source inventories: `antigravity-factory` (formerly `agy-software-factory`) @ fc268cf (Node ≥20, 39 tests passing),
+`codex-factory` (formerly `codex-factory-template`) @ 9bab498 (Python 3.11+, 33 tests passing), forge (~/forge, Python).
 
 Legend: **core** = agent-neutral `factory/` · **plat/X** = platforms/X adapter ·
 **ex** = examples/ · **docs** = docs/
 
-## From agy-software-factory
+## From `antigravity-factory` (formerly `agy-software-factory`)
 
 | Capability | Lands in | Notes |
 |---|---|---|
@@ -29,7 +29,7 @@ Legend: **core** = agent-neutral `factory/` · **plat/X** = platforms/X adapter 
 | 39 tests (cli, hooks, 8 pipeline "apps") | tests/ ported to Python | Parity check |
 | CI (Node 20/22) | CI on Python 3.11–3.13, macOS+Linux | |
 
-## From codex-factory-template
+## From `codex-factory` (formerly `codex-factory-template`)
 
 | Capability | Lands in | Notes |
 |---|---|---|

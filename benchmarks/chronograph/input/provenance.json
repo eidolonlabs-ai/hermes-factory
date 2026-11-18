@@ -1,0 +1,14 @@
+{
+  "source_name": "ChronoGraph_ Master Handoff & Architecture Specification.md",
+  "fixture": "original.md",
+  "sha256": "4b00410e74d5d07f500680f6d598e8e3899803207af750ea2d562cf2c062e256",
+  "purpose": "Canonical user-supplied handoff for benchmark intake. Preserved byte-for-byte.",
+  "extraction": "UTF-8 Markdown passed through without conversion.",
+  "historical_input": {
+    "source_name": "ChronoGraph_ Master Handoff & Architecture Specification.docx",
+    "fixture": "original.docx",
+    "sha256": "bd05c77ad14314835b5e687d4ede3e4f57bab9c5094e31f82715fb7b58710130",
+    "extracted_fixture": "extracted.txt",
+    "extraction": "OOXML document body paragraphs; includes table text, excludes layout/header/footer graphics."
+  }
+}

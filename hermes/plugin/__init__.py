@@ -1,4 +1,4 @@
-"""Hermes plugin for hermes-agent-factory.
+"""Hermes plugin for hermes-factory.
 
 Thin on purpose: it never imports the engine. The guard decision is made by the
 `factory-hook` executable (the same adapter the Claude Code hook uses), so this folder can be

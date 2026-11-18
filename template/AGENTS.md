@@ -1,7 +1,7 @@
 # Agent rules for this repository
 
 This repository is built by unattended coding agents, milestone by milestone, and judged by
-an external gate (see `CONTRACT.md` in hermes-agent-factory). Requirements are in
+an external gate (see `CONTRACT.md` in hermes-factory). Requirements are in
 `inputs/HANDOFF.md` and `inputs/CLARIFICATIONS.md`; host constraints in
 `inputs/ENVIRONMENT.md`; the technical spec in `SPEC.md`; the milestone plan in
 `.factory/plan.json`.

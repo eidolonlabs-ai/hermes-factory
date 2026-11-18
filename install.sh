@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install or update hermes-agent-factory for the current user. Idempotent.
+# Install or update hermes-factory for the current user. Idempotent.
 #
 #   curl -fsSL https://raw.githubusercontent.com/eidolonlabs-ai/hermes-factory/main/install.sh | bash
 #   ./install.sh              from a checkout: editable install, edits take effect at once

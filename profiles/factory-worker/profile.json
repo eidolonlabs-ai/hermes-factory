@@ -1,4 +1,4 @@
 {
-  "description": "Kanban operator for hermes-agent-factory cards; never edits code.",
+  "description": "Kanban operator for hermes-factory cards; never edits code.",
   "plugin": false
 }

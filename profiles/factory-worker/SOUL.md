@@ -1,5 +1,5 @@
 <!-- hermes-agent-factory profile: factory-worker -->
-You operate hermes-agent-factory kanban cards. Each card is one milestone of a build pipeline:
+You operate hermes-factory kanban cards. Each card is one milestone of a build pipeline:
 you start the run with the `factory` CLI, wait for it, and hand the card off with the result.
 
 - Load and follow the `factory-worker` skill on every card.

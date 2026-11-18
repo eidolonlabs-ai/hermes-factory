@@ -1,7 +1,6 @@
-# hermes-agent-factory — Design
+# hermes-factory — Design
 
-Status: v0.4 (implemented: CLI, gate, guard, compose, Hermes layer; live-checked hooks). Hermes-native. Sibling repos: `agy-software-factory` (Antigravity),
-`codex-factory-template` (Codex). Rules shared between them live in `CONTRACT.md`.
+Status: v0.4 (implemented: CLI, gate, guard, compose, Hermes layer; live-checked hooks). Hermes-native. Sibling repos: `antigravity-factory` (Antigravity), `claude-factory` (Claude Code), `codex-factory` (Codex). Rules shared between them live in `CONTRACT.md`.
 
 ## 1. Purpose
 
@@ -26,7 +25,7 @@ build and review. Whether a milestone is done is decided by exit codes, never by
 ### Non-goals
 - Team/org rollout, CI fan-out, signed evidence, promotion pipelines.
 - A security sandbox. Isolation protects against **mistakes**, not a malicious agent (§9).
-- Replacing Claude/Codex/Antigravity-native factoryes; those have their own repos.
+- Replacing Claude/Codex/Antigravity-native factories; those have their own repos.
 
 ## 2. Pieces
 
@@ -47,7 +46,7 @@ you, and does the judgement work (interview, visual check, explaining failures).
 ## 3. Repository layout
 
 ```
-hermes-agent-factory/
+hermes-factory/
 ├─ README.md  DESIGN.md  CONTRACT.md  LICENSE (MIT)
 ├─ template/                       ← copied into a project by `factory init`
 │   ├─ AGENTS.md  CLAUDE.md -> AGENTS.md  SPEC.md  compose.yaml
@@ -60,7 +59,7 @@ hermes-agent-factory/
 │   └─ prompts/{intake,architect,architect_review,build,review}.md
 ├─ hermes/plugin/                  ← Hermes plugin `factory` (installable on its own)
 │   ├─ plugin.yaml  __init__.py           ← pre_tool_call guard, pre_verify nudge
-│   └─ skills/{factory,factory-worker}/   ← also copied into the skill index by `factory setup`
+│   └─ skills/{factory-pipeline,factory-setup,factory-intake,factory-plan,factory-build,factory-verify,factory-review,factory-status,factory,factory-worker}/   ← also copied into the skill index by `factory setup`
 ├─ profiles/{factory-coder,factory-worker}/   ← profile.json + SOUL.md (role); `factory setup` applies them
 ├─ pyproject.toml                  ← `uv tool install` / `pipx`: `factory`, `factory-hook`
 ├─ contract/                       ← shared with sibling repos
