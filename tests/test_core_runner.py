@@ -280,6 +280,75 @@ pathlib.Path('src/frozen_seen.txt').write_text(json.dumps(sorted(frozen)))
         self.assertEqual(res["status"], "passed", res.get("summary"))
         self.assertIn("scripts/verify.sh M1", check(res, "verify")["summary"])
 
+    def test_early_exit_result_includes_checks_and_glob_parity(self):
+        from factory import audit_diff, gate
+        self.make_repo(freeze=False)
+        res = self.run_ms()  # fails before _phase because project is not frozen
+        self.assertEqual(res["checks"], [])
+        self.assertEqual(gate.path_matches("src/sub/a.py", "src/*.py"),
+                         audit_diff.matches_allowed_path("src/sub/a.py", ["src/*.py"]))
+        self.assertEqual(gate.path_matches("a.py", "**/*.py"),
+                         audit_diff.matches_allowed_path("a.py", ["**/*.py"]))
+
+    def test_holdout_symlink_and_conftest_blocked_and_force_prunes(self):
+        import copy
+        from core_support import PLAN
+        from factory import holdout
+        plan = copy.deepcopy(PLAN)
+        plan["milestones"][0]["allowed_paths"] = ["**"]
+        self.make_repo(plan=plan, holdout=True)
+
+        # Builder creating tests/holdout/conftest.py is blocked before holdout staging
+        self.fake(GOOD + "\npathlib.Path('tests/holdout').mkdir(parents=True, exist_ok=True)\n"
+                         "pathlib.Path('tests/holdout/conftest.py').write_text('raise SystemExit(0)')")
+        res = self.run_ms(attempts=1)
+        self.assertFalse(res["passed"])
+        self.assertEqual(res["status"], "needs_human")
+
+        # Direct holdout.stage_in rejects symlinked tests/holdout without copying outside
+        leak = self.tmp / "leak"; leak.mkdir()
+        wt = self.tmp / "wt_sym"; (wt / "tests").mkdir(parents=True)
+        os.symlink(leak, wt / "tests" / "holdout")
+        with self.assertRaises(ValueError):
+            holdout.stage_in("demo", wt)
+        self.assertEqual(list(leak.iterdir()), [])
+
+        # Re-freezing with --force prunes deleted holdouts when holdout set is updated
+        (self.repo / "tests/holdout").mkdir(parents=True)
+        (self.repo / "tests/holdout/new.txt").write_text("new\n")
+        git(self.repo, "add", "-A"); git(self.repo, "commit", "-qm", "new holdout")
+        holdout.freeze(self.repo, "demo", force=True)
+        self.assertEqual(holdout.stored_files("demo"), ["tests/holdout/new.txt"])
+
+    def test_template_scripts_portable_syntax_and_slug(self):
+        import shutil, stat
+        holdout_tpl = ROOT / "template/scripts/holdout.sh"
+        verify_tpl = ROOT / "template/scripts/verify.sh"
+        self.assertEqual(subprocess.run(["bash", "-n", str(holdout_tpl)]).returncode, 0)
+        self.assertEqual(subprocess.run(["bash", "-n", str(verify_tpl)]).returncode, 0)
+
+        bindir = self.tmp / "bindir"; bindir.mkdir()
+        dlog = self.tmp / "docker.log"
+        stub = bindir / "docker"
+        stub.write_text('#!/bin/sh\nprintf "%s|%s\\n" "$COMPOSE_PROJECT_NAME" "$*" >> "$DOCKER_LOG"\nexit 0\n')
+        stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+
+        app = self.tmp / "MyApp"
+        (app / "scripts").mkdir(parents=True)
+        (app / "tests/holdout").mkdir(parents=True)
+        shutil.copy2(holdout_tpl, app / "scripts/holdout.sh")
+        shutil.copy2(verify_tpl, app / "scripts/verify.sh")
+        env = {**os.environ, "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}", "DOCKER_LOG": str(dlog)}
+
+        r_h = subprocess.run(["bash", "scripts/holdout.sh", "M3"], cwd=app,
+                             env={**env, "COMPOSE_PROJECT_NAME": "p1"}, capture_output=True, text=True)
+        self.assertEqual(r_h.returncode, 0, r_h.stderr)
+        self.assertIn("-m m1 or m2 or m3", dlog.read_text())
+        self.assertNotIn("m3 or \n", dlog.read_text())
+
+        subprocess.run(["bash", "scripts/verify.sh", "M0"], cwd=app, env=env, capture_output=True, text=True)
+        self.assertIn("myapp-local|", dlog.read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

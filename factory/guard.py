@@ -38,31 +38,67 @@ def _worst(decisions) -> Decision:
     return worst
 
 
-def _relativize(path: str, root: str) -> str | None:
-    """Normalise to a repo-relative POSIX path. None means 'outside the repo'."""
+def _relativize_all(path: str, root: str, cwd: str = "") -> list[str]:
+    """Normalise to repo-relative POSIX path(s) across lexical and symlink-resolved forms.
+    Empty list means 'outside the repo'."""
     p = path.strip().replace("\\", "/")
     if not p:
-        return None
+        return []
     if p.startswith("~"):
-        return None  # home dir: not the guard's concern (rm of ~ itself is handled in shell)
+        return []  # home dir: not the guard's concern (rm of ~ itself is handled in shell)
+    if p in ("$PWD", "${PWD}"):
+        p = "."
+    elif p.startswith("$PWD/"):
+        p = "./" + p[5:]
+    elif p.startswith("${PWD}/"):
+        p = "./" + p[7:]
+
     if p.startswith("/"):
         p = re.sub(r"^/+", "/", p)
-        # Compare literal and symlink-resolved forms of both sides: on macOS /var is a
-        # symlink to /private/var, and tools report either form.
-        roots = {posixpath.normpath(root.replace("\\", "/")), os.path.realpath(root)} if root else set()
-        paths = {posixpath.normpath(p), os.path.realpath(p)}
-        for r in sorted(roots, key=len, reverse=True):
-            r = r.rstrip("/")
-            hit = next((n for n in paths if n == r or n.startswith(r + "/")), None)
-            if r and hit:
-                p = hit[len(r):].lstrip("/") or "."
-                break
+        cand_norm = posixpath.normpath(p)
+        cand_real = os.path.realpath(p).replace("\\", "/")
+    else:
+        base = (cwd or root or "").strip().replace("\\", "/")
+        if base:
+            joined = base.rstrip("/") + "/" + p
+            cand_norm = posixpath.normpath(joined)
+            cand_real = os.path.realpath(joined).replace("\\", "/")
         else:
-            return None  # outside the repo -> allowed
-    n = posixpath.normpath(p)  # resolves a/../.env -> .env and .git/./config
-    if n.startswith("../") or n == "..":
-        return None  # escapes the repo
-    return n
+            n = posixpath.normpath(p)
+            if n.startswith("../") or n == "..":
+                return []
+            return [n]
+
+    if not root:
+        return [cand_norm]
+
+    root_norm = posixpath.normpath(root.strip().replace("\\", "/")).rstrip("/")
+    root_real = os.path.realpath(root).replace("\\", "/").rstrip("/")
+
+    def _strip(cand: str, r: str) -> str | None:
+        if r and (cand == r or cand.startswith(r + "/")):
+            return cand[len(r):].lstrip("/") or "."
+        return None
+
+    out: list[str] = []
+    # Check symlink-resolved path first (deterministic; prevents set hash-order bypasses),
+    # then lexical path (catches symlinks inside the repo pointing outside).
+    for cand, r in (
+        (cand_real, root_real),
+        (cand_real, root_norm),
+        (cand_norm, root_norm),
+        (cand_norm, root_real),
+    ):
+        rel = _strip(cand, r)
+        if rel is not None and rel not in out:
+            out.append(rel)
+    return out
+
+
+def _relativize(path: str, root: str, cwd: str = "") -> str | None:
+    """Normalise to a repo-relative POSIX path. None means 'outside the repo'."""
+    rels = _relativize_all(path, root, cwd)
+    return rels[0] if rels else None
 
 
 def _check_rel(rel: str, ctx: GuardContext, is_dir: bool = False) -> Decision:
@@ -70,11 +106,15 @@ def _check_rel(rel: str, ctx: GuardContext, is_dir: bool = False) -> Decision:
     (rm/mv/cp -t), so also catch deleting a parent of protected files."""
     low = rel.lower()
     as_dir = rel + "/"
+    as_dir_low = low + "/"
     parts = low.split("/")
     base = parts[-1]
 
+    if is_dir and low in (".", "*"):
+        return Decision("deny", f"Blocked destructive repo-root operation on: {rel}")
+
     # .git internals (config, HEAD, hooks, refs, ...) - and the .git dir itself when removed
-    if ".git" in parts[:-1] or (is_dir and base == ".git"):
+    if ".git" in parts[:-1] or base == ".git":
         return Decision("deny", f"Blocked modification of .git internals: {rel}")
 
     # factory control directory (receipts, plans, run state)
@@ -88,8 +128,8 @@ def _check_rel(rel: str, ctx: GuardContext, is_dir: bool = False) -> Decision:
     # holdout tests: marker anywhere in the path ("holdout/" must be at a component start)
     for m in ([] if ctx.contract_phase else ctx.holdout_markers):
         ml = m.lower()
-        hay = "/" + (as_dir.lower() if is_dir else low)
-        needle = ml if not ml.endswith("/") else ml
+        hay = "/" + (as_dir_low if is_dir else low)
+        needle = ml
         if ml.endswith("/"):
             if "/" + needle in hay:
                 return Decision("deny", f"Blocked modification of holdout tests: {rel}")
@@ -100,10 +140,11 @@ def _check_rel(rel: str, ctx: GuardContext, is_dir: bool = False) -> Decision:
     for f in ctx.frozen:
         raw = f.replace("\\", "/")
         fn = posixpath.normpath(raw)
-        if rel == fn or (is_dir and fn.startswith(as_dir)):
+        fn_low = fn.lower()
+        if low == fn_low or (is_dir and fn_low.startswith(as_dir_low)):
             return Decision("deny", f"Blocked modification of frozen file: {fn}")
         # Frozen directory ("tests/"): existing files inside are frozen; NEW files may be added.
-        if raw.endswith("/") and rel.startswith(fn + "/"):
+        if raw.endswith("/") and low.startswith(fn_low + "/"):
             if is_dir or os.path.lexists(os.path.join(ctx.root, rel)):
                 return Decision("deny", f"Blocked modification of frozen file under {fn}/: {rel}")
 
@@ -116,10 +157,10 @@ def _check_rel(rel: str, ctx: GuardContext, is_dir: bool = False) -> Decision:
 
 
 def _check_write(path: str, ctx: GuardContext, is_dir: bool = False) -> Decision:
-    rel = _relativize(path, ctx.root)
-    if rel is None:
+    rels = _relativize_all(path, ctx.root, ctx.cwd)
+    if not rels:
         return ALLOW
-    return _check_rel(rel, ctx, is_dir)
+    return _worst(_check_rel(rel, ctx, is_dir) for rel in rels)
 
 
 def check_write(path: str, ctx: GuardContext) -> Decision:
@@ -137,21 +178,46 @@ _AMP_REDIR = re.compile(r"[<>]")
 
 def _read_sub(s: str, i: int) -> tuple[str, int]:
     """s[i] is just after '$('. Return (inner text, index after the matching ')')."""
-    depth, j = 1, i
-    while j < len(s) and depth:
-        if s[j] == "(" and s[j - 1] != "\\":
+    depth, j, quote = 1, i, None
+    n = len(s)
+    while j < n and depth > 0:
+        ch = s[j]
+        if quote == "'":
+            if ch == "'":
+                quote = None
+            j += 1
+        elif ch == "\\" and j + 1 < n:
+            j += 2
+        elif ch == "$" and j + 1 < n and s[j + 1] == "(":
+            _, j = _read_sub(s, j + 2)
+        elif quote == '"':
+            if ch == '"':
+                quote = None
+            j += 1
+        elif ch in ("'", '"'):
+            quote = ch
+            j += 1
+        elif ch == "(":
             depth += 1
-        elif s[j] == ")" and s[j - 1] != "\\":
+            j += 1
+        elif ch == ")":
             depth -= 1
-        j += 1
+            j += 1
+        else:
+            j += 1
     return s[i:j - 1] if depth == 0 else s[i:j], j
 
 
 def _read_backtick(s: str, i: int) -> tuple[str, int]:
-    j = i
-    while j < len(s) and not (s[j] == "`" and s[j - 1] != "\\"):
+    j, n = i, len(s)
+    while j < n:
+        if s[j] == "\\" and j + 1 < n:
+            j += 2
+            continue
+        if s[j] == "`":
+            return s[i:j], j + 1
         j += 1
-    return s[i:j], j + 1
+    return s[i:j], j
 
 
 def split_segments(cmd: str) -> list[str]:
@@ -177,22 +243,26 @@ def split_segments(cmd: str) -> list[str]:
             cur += ch
             if ch == "'":
                 quote = None
-        elif ch == "$" and nxt == "(" and prev != "\\":
+        elif ch == "\\" and i + 1 < n:
+            cur += ch + nxt
+            i += 2
+            continue
+        elif ch == "$" and nxt == "(":
             sub, i = _read_sub(cmd, i + 2)
             segs.extend(split_segments(sub))
             continue
-        elif ch == "`" and prev != "\\":
+        elif ch == "`":
             sub, i = _read_backtick(cmd, i + 1)
             segs.extend(split_segments(sub))
             continue
         elif quote == '"':
             cur += ch
-            if ch == '"' and prev != "\\":
+            if ch == '"':
                 quote = None
         elif ch in "\"'":
             quote = ch
             cur += ch
-        elif ch in ";\n()" and prev != "\\":
+        elif ch in ";\n()":
             flush()
         elif ch in "&|":
             if nxt == ch:  # && or ||
@@ -209,39 +279,151 @@ def split_segments(cmd: str) -> list[str]:
     return segs
 
 
-_TOKEN = re.compile(r"""(?:"[^"]*"|'[^']*'|[^\s"']+)+""")
-_QUOTED = re.compile(r"""\"([^\"]*)\"|'([^']*)'""")
-
-
 def tokenize(segment: str) -> list[str]:
-    """Whitespace tokens with quotes removed."""
-    return [_QUOTED.sub(lambda m: m.group(1) if m.group(1) is not None else m.group(2), t)
-            for t in _TOKEN.findall(segment)]
+    """Whitespace/redirect tokens with quotes and backslash escapes resolved."""
+    tokens: list[str] = []
+    cur: list[str] = []
+    in_token = False
+    quote: str | None = None
+    i = 0
+    n = len(segment)
+
+    def flush():
+        nonlocal cur, in_token
+        if in_token or cur:
+            tokens.append("".join(cur))
+        cur = []
+        in_token = False
+
+    while i < n:
+        ch = segment[i]
+        if quote == "'":
+            if ch == "'":
+                quote = None
+            else:
+                cur.append(ch)
+            in_token = True
+            i += 1
+        elif quote == '"':
+            if ch == '"':
+                quote = None
+            elif ch == "\\" and i + 1 < n and segment[i + 1] in ('"', "\\", "$", "`", "\n"):
+                cur.append(segment[i + 1])
+                i += 2
+                in_token = True
+                continue
+            else:
+                cur.append(ch)
+            in_token = True
+            i += 1
+        elif ch in ("'", '"'):
+            quote = ch
+            in_token = True
+            i += 1
+        elif ch == "\\" and i + 1 < n:
+            cur.append(segment[i + 1])
+            in_token = True
+            i += 2
+        elif ch.isspace():
+            flush()
+            i += 1
+        elif ch in "<>":
+            prefix = "".join(cur)
+            if not (in_token and (prefix.isdigit() or prefix == "&")):
+                flush()
+            op = ch
+            if i + 1 < n and (
+                (ch == ">" and segment[i + 1] in (">", "|", "&"))
+                or (ch == "<" and segment[i + 1] in ("<", ">", "&"))
+            ):
+                op += segment[i + 1]
+                i += 2
+                if op == ">&" and i < n and segment[i].isdigit():
+                    op += segment[i]
+                    i += 1
+            else:
+                i += 1
+            cur.append(op)
+            in_token = True
+            flush()
+        else:
+            cur.append(ch)
+            in_token = True
+            i += 1
+    flush()
+    return tokens
 
 
 _ASSIGN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_SUDO_VALUED = {"-u", "-g", "-C", "-h", "-p", "-r", "-t", "-U", "-D", "-R", "-T"}
+_ENV_VALUED = {"-u", "-C", "-S", "--unset", "--chdir", "--split-string"}
+_XARGS_VALUED = {"-I", "-i", "-L", "-l", "-n", "-P", "-s", "-d", "-E", "-J", "-a", "-R"}
+
+
+def _strip_prefixes_ex(tokens: list[str]) -> tuple[list[str], list[str]]:
+    """Drop sudo/env/command/exec/nohup/time/xargs/control prefixes; return (tokens, extra_cmds)."""
+    extra: list[str] = []
+    i = 0
+    n = len(tokens)
+    while i < n:
+        t = tokens[i]
+        base = posixpath.basename(t)
+        if _ASSIGN.match(t) or t in ("{", "!", "}"):
+            i += 1
+        elif base in ("sudo", "env", "command", "exec", "nohup", "time", "builtin", "xargs"):
+            i += 1
+            if base == "sudo":
+                while i < n and tokens[i].startswith("-"):
+                    flag = tokens[i]
+                    i += 1
+                    if flag in _SUDO_VALUED and i < n:
+                        i += 1
+            elif base == "env":
+                while i < n and (tokens[i].startswith("-") or _ASSIGN.match(tokens[i])):
+                    flag = tokens[i]
+                    i += 1
+                    if flag in ("-S", "--split-string") and i < n:
+                        extra.append(tokens[i])
+                        i += 1
+                    elif flag.startswith("--split-string="):
+                        extra.append(flag.split("=", 1)[1])
+                    elif flag.startswith("-S") and len(flag) > 2:
+                        extra.append(flag[2:])
+                    elif flag in _ENV_VALUED and i < n:
+                        i += 1
+            elif base == "exec":
+                while i < n and tokens[i].startswith("-"):
+                    flag = tokens[i]
+                    i += 1
+                    if flag == "-a" and i < n:
+                        i += 1
+            elif base == "xargs":
+                while i < n and tokens[i].startswith("-"):
+                    flag = tokens[i]
+                    i += 1
+                    if flag in _XARGS_VALUED and i < n:
+                        i += 1
+            else:
+                while i < n and tokens[i].startswith("-"):
+                    i += 1
+        else:
+            break
+    out = tokens[i:]
+    while out and out[-1] == "}":
+        out = out[:-1]
+    return out, extra
 
 
 def strip_prefixes(tokens: list[str]) -> list[str]:
     """Drop sudo (+flags) / env / command / VAR=x prefixes."""
-    i = 0
-    while i < len(tokens):
-        t = tokens[i]
-        if _ASSIGN.match(t):
-            i += 1
-        elif t in ("sudo", "command", "env", "nohup", "time", "exec"):
-            i += 1
-            while t in ("sudo", "env") and i < len(tokens) and tokens[i].startswith("-"):
-                i += 1
-        else:
-            break
-    return tokens[i:]
+    return _strip_prefixes_ex(tokens)[0]
 
 
 # --------------------------------------------------------------------------- shell rules
 
 HOME_FORMS = ("~", "$HOME", "${HOME}")
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+_SHELL_VALUED = {"-o", "+o", "-O", "+O"}
 GIT_OPTS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"}
 
 FORK_BOMB = re.compile(r":\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:")
@@ -293,13 +475,16 @@ def _positional(args: list[str], value_flags: tuple[str, ...] = ()) -> list[str]
     return out
 
 
-def _target_dir_dests(args: list[str]) -> tuple[list[str], list[str]]:
-    """For cp/mv/ln/install: (destinations, sources). Handles -t / --target-directory."""
+def _target_dir_dests(args: list[str], is_ln: bool = False) -> tuple[list[str], list[str]]:
+    """For cp/mv/ln/install: (destinations, sources). Handles -t / -ft / --target-directory."""
     dests, pos, has_t = [], [], False
     i = 0
     while i < len(args):
         a = args[i]
-        if a in ("-t", "--target-directory"):
+        if a == "--":
+            pos.extend(args[i + 1:])
+            break
+        if a == "--target-directory" or (a.startswith("-") and not a.startswith("--") and a.endswith("t")):
             has_t = True
             if i + 1 < len(args):
                 dests.append(args[i + 1])
@@ -307,6 +492,9 @@ def _target_dir_dests(args: list[str]) -> tuple[list[str], list[str]]:
         elif a.startswith("--target-directory="):
             has_t = True
             dests.append(a.split("=", 1)[1])
+        elif a.startswith("-t") and len(a) > 2:
+            has_t = True
+            dests.append(a[2:])
         elif a.startswith("-") and len(a) > 1:
             pass
         else:
@@ -316,6 +504,8 @@ def _target_dir_dests(args: list[str]) -> tuple[list[str], list[str]]:
         return dests, pos
     if len(pos) > 1:
         return [pos[-1]], pos[:-1]
+    if is_ln and len(pos) == 1:
+        return [posixpath.basename(pos[0].rstrip("/")) or pos[0]], []
     return pos, []
 
 
@@ -334,12 +524,20 @@ def _inplace_targets(cmd: str, args: list[str]) -> list[str]:
             in_place = True
         elif a.startswith("--expression=") or a.startswith("--file="):
             explicit = True
+        elif a in ("--expression", "--file"):
+            explicit = True
+            i += 1
         elif a.startswith("-") and not a.startswith("--") and len(a) > 1:
-            if "i" in a:
-                in_place = True
-            if (cmd == "sed" and re.search(r"[ef]$", a)) or (cmd == "perl" and re.search(r"[eE]$", a)):
+            m = (re.match(r"^-([^-ef]*?)([ef])(.*)$", a) if cmd == "sed"
+                 else re.match(r"^-([^-eE]*?)([eE])(.*)$", a))
+            if m:
+                if "i" in m.group(1):
+                    in_place = True
                 explicit = True
-                i += 1  # skip the script operand
+                if not m.group(3):
+                    i += 1  # separate script operand follows
+            elif "i" in a:
+                in_place = True
         elif a.startswith("--"):
             pass
         else:
@@ -351,14 +549,14 @@ def _inplace_targets(cmd: str, args: list[str]) -> list[str]:
 
 
 def _redirect_targets(tokens: list[str]) -> tuple[list[str], list[str]]:
-    """Split tokens into (non-redirect tokens, redirect targets) for > >> 1> 2> &> >|."""
+    """Split tokens into (non-redirect tokens, redirect targets) for > >> 1> 2> &> >| <>."""
     rest, targets = [], []
     i = 0
-    pat = re.compile(r"^(?:\d*|&)>>?\|?(.*)$")
+    pat = re.compile(r"^(?:\d*|&)(?:>>?\|?|<>)(.*)$")
     while i < len(tokens):
         t = tokens[i]
         m = pat.match(t)
-        if m and not t.startswith("<"):
+        if m and not (t.startswith("<") and not t.startswith("<>")):
             tgt = m.group(1)
             if not tgt and i + 1 < len(tokens):
                 tgt = tokens[i + 1]
@@ -381,6 +579,27 @@ def _git_decisions(args: list[str], ctx: GuardContext) -> list[Decision]:
     sub, rest = args[i], args[i + 1:]
     if sub == "push":
         out.append(Decision("deny", "Blocked git push: publishing is a human decision."))
+    elif sub == "commit":
+        _commit_val = {"-m", "-F", "-C", "-c", "-t", "--message", "--file", "--reuse-message",
+                       "--reedit-message", "--template", "--author", "--date", "--fixup", "--squash"}
+        j = 0
+        while j < len(rest):
+            a = rest[j]
+            if a == "--":
+                break
+            if a in _commit_val or (a.startswith("-") and not a.startswith("--") and a[-1] in ("m", "F", "C", "c", "t")):
+                if a.startswith("-") and not a.startswith("--") and "n" in a:
+                    out.append(Decision("deny", "Blocked --no-verify/-n: hooks must not be bypassed."))
+                j += 2
+                continue
+            if a == "--no-verify" or (a.startswith("-") and not a.startswith("--") and "n" in a):
+                out.append(Decision("deny", "Blocked --no-verify/-n: hooks must not be bypassed."))
+            j += 1
+    elif sub == "config":
+        pos = [a for a in rest if not a.startswith("-")]
+        if any(a.lower() == "core.hookspath" or a.lower().startswith("core.hookspath=") for a in pos):
+            if len(pos) >= 2 or any("=" in a for a in pos):
+                out.append(Decision("deny", "Blocked modifying git config core.hooksPath."))
     elif sub == "reset" and "--hard" in rest:
         out.append(Decision("ask", "git reset --hard discards work: needs human approval."))
     elif sub == "clean" and any(
@@ -389,13 +608,13 @@ def _git_decisions(args: list[str], ctx: GuardContext) -> list[Decision]:
     elif sub == "rebase" and any(a in ("-i", "--interactive") for a in rest):
         out.append(Decision("ask", "Interactive rebase rewrites history: needs human approval."))
     elif sub in ("checkout", "restore"):
-        # paths after `--` (checkout) or any positional (restore) are overwritten
+        # paths after `--` or positionals on checkout/restore are checked against protected/frozen rules
         if "--" in rest:
             paths = rest[rest.index("--") + 1:]
         elif sub == "restore":
             paths = _positional(rest, ("-s", "--source"))
         else:
-            paths = []
+            paths = _positional(rest, ("-b", "-B", "--orphan", "--conflict", "--recurse-submodules", "-U", "--unified"))
         for p in paths:
             out.append(_check_write(p, ctx, True))
     return out
@@ -403,8 +622,11 @@ def _git_decisions(args: list[str], ctx: GuardContext) -> list[Decision]:
 
 def _segment_decisions(tokens: list[str], ctx: GuardContext, depth: int) -> list[Decision]:
     out: list[Decision] = []
-    tokens, redirects = _redirect_targets(strip_prefixes(tokens))
-    tokens = strip_prefixes(tokens)
+    tokens, extra1 = _strip_prefixes_ex(tokens)
+    tokens, redirects = _redirect_targets(tokens)
+    tokens, extra2 = _strip_prefixes_ex(tokens)
+    for cmd_str in extra1 + extra2:
+        out.append(_inspect(cmd_str, ctx, depth + 1))
     for r in redirects:  # redirect target is a write
         out.append(_check_write(r, ctx))
     if not tokens:
@@ -416,17 +638,31 @@ def _segment_decisions(tokens: list[str], ctx: GuardContext, depth: int) -> list
         out.append(Decision("deny", "Blocked --no-verify: hooks must not be bypassed."))
 
     if cmd in SHELLS:  # sh -c "..." : unwrap and inspect recursively
-        for i, a in enumerate(args):
-            if a.startswith("-") and not a.startswith("--") and "c" in a and i + 1 < len(args):
-                out.append(_inspect(args[i + 1], ctx, depth + 1))
+        i = 0
+        while i < len(args):
+            a = args[i]
+            if a == "--":
                 break
+            if a in _SHELL_VALUED:
+                i += 2
+                continue
+            if a.startswith("-") and not a.startswith("--") and "c" in a:
+                j = i + 1
+                if j < len(args) and args[j] == "--":
+                    j += 1
+                if j < len(args):
+                    out.append(_inspect(args[j], ctx, depth + 1))
+                break
+            i += 1
+    elif cmd == "eval" and args:
+        out.append(_inspect(" ".join(args), ctx, depth + 1))
     elif cmd == "rm":
         for t in _positional(args):
             if _norm_rm_target(t) in CATASTROPHIC:
                 out.append(Decision("deny", f"Blocked catastrophic rm target: {t}"))
             out.append(_check_write(t, ctx, True))
     elif cmd in ("cp", "mv", "ln", "install"):
-        dests, srcs = _target_dir_dests(args)
+        dests, srcs = _target_dir_dests(args, is_ln=(cmd == "ln"))
         for d in dests:
             out.append(_check_write(d, ctx, True))
         if cmd == "mv":  # moving a source away is a deletion
@@ -502,12 +738,19 @@ WRITE_TOOLS = {"write_file", "write", "edit", "multiedit", "notebookedit", "patc
                "str_replace_editor"}
 _PATCH_FILE = re.compile(r"^\*\*\* (?:Update|Add|Delete) File:\s*(.+?)\s*$"
                          r"|^\*\*\* Move to:\s*(.+?)\s*$", re.M)
-_DIFF_FILE = re.compile(r"^\+\+\+ (?:b/)?(\S+)", re.M)
+_DIFF_FILE = re.compile(r"^(?:\+\+\+|---)\s+(.+?)(?:\t.*)?$", re.M)
 
 
 def _patch_paths(text: str) -> list[str]:
     paths = [a or b for a, b in _PATCH_FILE.findall(text)]
-    paths += [p for p in _DIFF_FILE.findall(text) if p != "/dev/null"]  # plain unified diffs
+    for raw in _DIFF_FILE.findall(text):
+        p = raw.strip()
+        if p.startswith('"') and p.endswith('"') and len(p) >= 2:
+            p = p[1:-1]
+        if p.startswith(("a/", "b/")):
+            p = p[2:]
+        if p and p != "/dev/null":
+            paths.append(p)
     return paths
 
 

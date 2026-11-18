@@ -181,3 +181,56 @@ class FrozenDirectoryTests(unittest.TestCase):
         self.assertEqual(guard.check_write("tests/test_new_regression.py", ctx).decision, "allow")
         self.assertEqual(guard.check_shell("rm -rf tests", ctx).decision, "deny")
         self.assertEqual(guard.check_shell("echo x >> tests/test_old.py", ctx).decision, "deny")
+
+
+class HardenedGuardTests(unittest.TestCase):
+    def test_symlink_and_reentry_traversal_denied(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d).resolve()
+            (root / "src").mkdir()
+            (root / "scripts").mkdir()
+            (root / "scripts" / "verify.sh").write_text("#!/bin/sh\n")
+            os.symlink(root / "scripts" / "verify.sh", root / "alias.sh")
+            os.symlink(Path("..") / ".git" / "hooks" / "post-checkout", root / "src" / "dangling")
+            ctx = GuardContext(root=str(root), frozen=["scripts/verify.sh"])
+            self.assertEqual(guard.check_write("alias.sh", ctx).decision, "deny")
+            self.assertEqual(guard.check_write(str(root / "alias.sh"), ctx).decision, "deny")
+            self.assertEqual(guard.check_write("src/dangling", ctx).decision, "deny")
+            self.assertEqual(guard.check_write(f"../{root.name}/.env", ctx).decision, "deny")
+            self.assertEqual(guard.check_write("$PWD/.git/config", ctx).decision, "deny")
+
+    def test_shell_wrappers_escapes_and_diff_deletes(self):
+        for cmd in (
+            "{ git push; }",
+            "! git push",
+            "command -p git push",
+            "sudo -u root git push",
+            'eval "rm -rf /"',
+            'env -S "rm -rf /"',
+            r"g\it push",
+            "rm -rf .",
+            "ln -s /tmp/.env",
+        ):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(guard.check_shell(cmd, CTX).decision, "deny", cmd)
+        diff = "--- a/.env\n+++ /dev/null\n@@ -1 +0,0 @@\n-SECRET=1\n"
+        self.assertEqual(guard.decide_tool_call("patch", {"patch": diff}, CTX).decision, "deny")
+
+    def test_frozen_file_missing_or_nonlist_fails_closed_and_workdir(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d).resolve()
+            (root / "scripts").mkdir()
+            bad = root / "obj.json"
+            bad.write_text("{}")
+            payload = json.dumps({"tool_name": "write_file", "tool_input": {"path": "scripts/verify.sh"}, "cwd": str(root)})
+            for env in (
+                {"FACTORY_ROOT": str(root), "FACTORY_FROZEN_FILE": str(root / "missing.json")},
+                {"FACTORY_ROOT": str(root), "FACTORY_FROZEN_FILE": str(bad)},
+            ):
+                out, _ = hooks_adapters.hermes_pre_tool_call(payload, env)
+                self.assertEqual(json.loads(out)["action"], "block")
+            ff = root / "frozen.json"
+            ff.write_text(json.dumps(["scripts/verify.sh"]))
+            shell_payload = json.dumps({"tool_name": "terminal", "tool_input": {"command": "echo x > verify.sh", "workdir": str(root / "scripts")}, "cwd": str(root)})
+            out, _ = hooks_adapters.hermes_pre_tool_call(shell_payload, {"FACTORY_ROOT": str(root), "FACTORY_FROZEN_FILE": str(ff)})
+            self.assertEqual(json.loads(out)["action"], "block")

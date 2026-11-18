@@ -6,17 +6,19 @@ then the merge policy applies (ff | pr | human). Worktrees are kept on failure.
 from __future__ import annotations
 
 import datetime as dt
+import fcntl
 import json
 import os
 import re
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
 from . import engines, gate, state, workspace
 from .engines import resolve_review_engine
 from .evidence import now, read_json, tail, write_json, write_result
-from .models import ConfigError, load_config, milestone_def
+from .models import ConfigError, load_config, milestone_def, validate_run_id
 from .process import run_process
 
 PROMPTS = Path(__file__).parent / "prompts"
@@ -32,11 +34,33 @@ def render(template: str, **kw) -> str:
     return re.sub(r"\{(\w+)\}", lambda m: str(kw.get(m.group(1), m.group(0))), template)
 
 
+@contextmanager
+def _status_lock(rdir: Path):
+    rdir.mkdir(parents=True, exist_ok=True)
+    with open(rdir / "status.lock", "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
+
 def write_status(rdir: Path, **kw) -> None:
     p = rdir / "status.json"
-    s = read_json(p, {})
-    s.update(kw)
-    write_json(p, s)
+    with _status_lock(rdir):
+        s = read_json(p, {})
+        s.update(kw)
+        write_json(p, s)
+
+
+def set_detached_pid(rdir: Path, pid: int) -> None:
+    """Record child pid only if the detached child has not already finished."""
+    p = rdir / "status.json"
+    with _status_lock(rdir):
+        s = read_json(p, {})
+        if s.get("state") in (None, "running") and not s.get("pid"):
+            s["pid"] = pid
+            write_json(p, s)
 
 
 def _expand_frozen(repo, freeze_sha, frozen: list[str]) -> list[str]:
@@ -179,12 +203,12 @@ def execute_run(project: str, milestone: str, role: str, engine: str, *, attempt
                 feedback: str = "", review_engine: str | None = None, merge: bool = True,
                 run_id: str | None = None) -> dict:
     """Run one milestone role end to end. Always writes result.json; returns it."""
-    run_id = run_id or new_run_id(role, milestone)
+    run_id = validate_run_id(run_id) if run_id is not None else new_run_id(role, milestone)
     rdir = state.run_dir(project, run_id)
     rdir.mkdir(parents=True, exist_ok=True)
     result: dict = {"schema_version": 1, "run_id": run_id, "project": project, "milestone": milestone,
                     "role": role, "engine": engine, "status": "running", "passed": False,
-                    "merged": False, "started": now()}
+                    "merged": False, "checks": [], "started": now()}
     write_status(rdir, state="running", pid=os.getpid(), milestone=milestone, role=role,
                  engine=engine, started=result["started"])
     lock = ws = None

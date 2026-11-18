@@ -61,10 +61,12 @@ def docker_available() -> tuple[bool, str]:
         return False, "docker timed out"
 
 
-def load_config(worktree: str, compose_file: str, project_name: str, env: dict | None = None,
+def load_config(worktree: str, compose_file: str | list[str], project_name: str, env: dict | None = None,
                 timeout_s: float = 60) -> dict:
     """`docker compose config --format json`. Raises RuntimeError on failure."""
-    argv = ["docker", "compose", "-f", str(compose_file), "-p", project_name,
+    files = [compose_file] if isinstance(compose_file, (str, Path)) else list(compose_file)
+    fargs = [x for f in files for x in ("-f", str(f))]
+    argv = ["docker", "compose", *fargs, "-p", project_name,
             "config", "--format", "json"]
     try:
         r = subprocess.run(argv, cwd=worktree, env=_env(env, project_name), capture_output=True,
@@ -79,20 +81,24 @@ def load_config(worktree: str, compose_file: str, project_name: str, env: dict |
         raise RuntimeError(f"docker compose config returned invalid JSON: {e}") from e
 
 
-def _is_docker_path(p: str) -> bool:
+def _is_docker_path(p: str, worktree: str = "") -> bool:
     home = os.path.expanduser("~")
-    n = os.path.normpath(p)
-    if n in DOCKER_SOCKETS or n.endswith("docker.sock"):
-        return True
-    for d in (os.path.join(home, ".docker"), "/root/.docker"):
-        if n == d or n.startswith(d + os.sep):
+    exp = os.path.expanduser(p)
+    cand = exp if (os.path.isabs(exp) or not worktree) else os.path.join(worktree, exp)
+    for n in (os.path.normpath(exp), os.path.realpath(cand)):
+        if n in DOCKER_SOCKETS or n.endswith("docker.sock"):
             return True
+        for d in (os.path.join(home, ".docker"), "/root/.docker"):
+            if n == d or n.startswith(d + os.sep):
+                return True
     return False
 
 
 def _inside(path: str, root: str) -> bool:
     try:
-        Path(path).resolve().relative_to(Path(root).resolve())
+        exp = os.path.expanduser(path)
+        target = Path(exp) if os.path.isabs(exp) else (Path(root) / exp)
+        target.resolve().relative_to(Path(root).resolve())
         return True
     except ValueError:
         return False
@@ -122,8 +128,17 @@ def policy_violations(cfg: dict, worktree: str, protected_projects: list[str],
                 v.append(f"{sname}: cap_add {cap} is not allowed")
         if svc.get("devices"):
             v.append(f"{sname}: devices are not allowed")
+        if svc.get("volumes_from"):
+            v.append(f"{sname}: volumes_from is not allowed")
         if not allow_published_ports and svc.get("ports"):
             v.append(f"{sname}: published ports are not allowed during gates")
+        env_files = svc.get("env_file") or []
+        if isinstance(env_files, (str, dict)):
+            env_files = [env_files]
+        for ef in env_files:
+            ep = ef if isinstance(ef, str) else str((ef or {}).get("path") or "")
+            if ep and (_is_docker_path(ep, worktree) or not _inside(ep, worktree)):
+                v.append(f"{sname}: env_file outside worktree is not allowed ({ep})")
         for vol in svc.get("volumes") or []:
             if isinstance(vol, str):
                 src, vtype = vol.split(":")[0], ("bind" if vol.startswith(("/", ".", "~")) else "volume")
@@ -131,7 +146,7 @@ def policy_violations(cfg: dict, worktree: str, protected_projects: list[str],
                 src, vtype = vol.get("source") or "", vol.get("type", "")
             if not src:
                 continue
-            if _is_docker_path(src):
+            if _is_docker_path(src, worktree):
                 v.append(f"{sname}: docker socket/config mount is not allowed ({src})")
             elif vtype == "bind" and not _inside(src, worktree):
                 v.append(f"{sname}: bind mount outside worktree is not allowed ({src})")
@@ -139,8 +154,27 @@ def policy_violations(cfg: dict, worktree: str, protected_projects: list[str],
         if net and net.get("external"):
             v.append(f"network {nname}: external networks are not allowed")
     for vname, vol in (cfg.get("volumes") or {}).items():
-        if vol and vol.get("external"):
+        if not vol:
+            continue
+        if vol.get("external"):
             v.append(f"volume {vname}: external volumes are not allowed")
+        opts = vol.get("driver_opts") or {}
+        if isinstance(opts, dict):
+            dev = str(opts.get("device") or "")
+            if dev:
+                if _is_docker_path(dev, worktree):
+                    v.append(f"volume {vname}: docker socket/config mount in driver_opts is not allowed ({dev})")
+                elif ("bind" in str(opts.get("o") or "").lower().split(",") or dev.startswith(("/", ".", "~"))) and not _inside(dev, worktree):
+                    v.append(f"volume {vname}: driver_opts bind outside worktree is not allowed ({dev})")
+    for kind, mapping in (("secret", cfg.get("secrets")), ("config", cfg.get("configs"))):
+        for kname, item in (mapping or {}).items():
+            if not item:
+                continue
+            if item.get("external"):
+                v.append(f"{kind} {kname}: external {kind}s are not allowed")
+            fpath = item.get("file") or ""
+            if fpath and (_is_docker_path(fpath, worktree) or not _inside(fpath, worktree)):
+                v.append(f"{kind} {kname}: file outside worktree is not allowed ({fpath})")
     return v
 
 
@@ -315,12 +349,13 @@ def preview(repo: str, compose_file: str, project: str, overlay: str = "compose.
     published ports are allowed here only because this is not a gate.
     """
     name = project_name(project, "") + "-preview"
-    files = ["-f", compose_file] + (["-f", overlay] if (Path(repo) / overlay).exists() else [])
+    compose_files = [compose_file] + ([overlay] if (Path(repo) / overlay).exists() else [])
+    files = [x for f in compose_files for x in ("-f", f)]
     log = Path(log or Path(repo) / ".factory-preview.log")
     if down:
         rc = down_project(name, repo, log)
         return {"project": name, "down": rc == 0}
-    cfg = load_config(repo, compose_file, name)
+    cfg = load_config(repo, compose_files, name)
     cfg.setdefault("name", name)
     viol = policy_violations(cfg, repo, [], allow_published_ports=True)
     if viol:

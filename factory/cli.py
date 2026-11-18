@@ -14,7 +14,7 @@ from . import engines, state, workspace
 from .evidence import now, read_json, tail
 from .resources import data_dir
 from .models import (ConfigError, DEFAULT_CONFIG, load_config, load_plan, milestone_def,
-                     validate_config, validate_milestone)
+                     validate_config, validate_milestone, validate_run_id)
 
 
 def out(obj) -> None:
@@ -163,12 +163,13 @@ def cmd_freeze(a) -> int:
     return 0
 
 
-def _run_args(a) -> list[str]:
+def _run_args(a, feedback_file: str | None = None) -> list[str]:
     argv = ["run", "--milestone", a.milestone, "--role", a.role, "--engine", a.engine]
     if a.attempts:
         argv += ["--attempts", str(a.attempts)]
-    if a.feedback_file:
-        argv += ["--feedback-file", a.feedback_file]
+    fb = feedback_file if feedback_file is not None else a.feedback_file
+    if fb:
+        argv += ["--feedback-file", fb]
     if a.review_engine:
         argv += ["--review-engine", a.review_engine]
     if a.no_merge:
@@ -179,24 +180,27 @@ def _run_args(a) -> list[str]:
 def cmd_run(a) -> int:
     from . import runner
     repo, project = resolve(a)
-    feedback = Path(a.feedback_file).read_text() if a.feedback_file else ""
+    fb_path = str(Path(a.feedback_file).expanduser().resolve()) if a.feedback_file else None
+    feedback = Path(fb_path).read_text() if fb_path else ""
+    run_id = validate_run_id(a.run_id) if a.run_id is not None else None
     if a.detach:
-        run_id = a.run_id or runner.new_run_id(a.role, a.milestone)
+        run_id = run_id or runner.new_run_id(a.role, a.milestone)
         rdir = state.run_dir(project, run_id)
         rdir.mkdir(parents=True, exist_ok=True)
-        log = (rdir / "driver.log").open("w")
-        env = engines.base_env()
-        p = subprocess.Popen([sys.executable, "-m", "factory", *_run_args(a), "--project", project,
-                              "--repo", str(repo), "--run-id", run_id],
-                             stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                             start_new_session=True, cwd=str(repo), env=env)
-        runner.write_status(rdir, state="running", pid=p.pid, milestone=a.milestone, role=a.role,
+        runner.write_status(rdir, state="running", milestone=a.milestone, role=a.role,
                             engine=a.engine, started=now())
+        env = engines.base_env(include_pkg_pythonpath=True)
+        with (rdir / "driver.log").open("w") as log:
+            p = subprocess.Popen([sys.executable, "-m", "factory", *_run_args(a, fb_path), "--project", project,
+                                  "--repo", str(repo), "--run-id", run_id],
+                                 stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                 start_new_session=True, cwd=str(repo), env=env)
+        runner.set_detached_pid(rdir, p.pid)
         out({"run_id": run_id, "detached": True, "pid": p.pid})
         return 0
     res = runner.execute_run(project, a.milestone, a.role, a.engine, attempts=a.attempts,
                              feedback=feedback, review_engine=a.review_engine,
-                             merge=not a.no_merge, run_id=a.run_id)
+                             merge=not a.no_merge, run_id=run_id)
     out(runner.run_summary(state.run_dir(project, res["run_id"])))
     return runner.EXIT.get(res["status"], 1)
 
@@ -299,12 +303,11 @@ def cmd_status(a) -> int:
             s = read_json(r, {})
             if s.get("state") == "running":
                 pid = s.get("pid")
+                if not pid:
+                    continue
                 try:
-                    if pid:
-                        os.kill(int(pid), 0)
+                    os.kill(int(pid), 0)
                 except (OSError, ValueError):
-                    s["state"] = "dead"  # driver process gone (killed/crashed); not active
-                    active_dead = True
                     continue
                 active.append({"run_id": r.parent.name, **{k: s.get(k) for k in ("milestone", "role", "phase", "pid")}})
     try:

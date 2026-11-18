@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import state
+from .models import validate_run_id
 
 
 class WorkspaceError(ValueError):
@@ -95,6 +96,7 @@ def is_clean(repo: Path | str) -> bool:
 
 
 def create_worktree(repo: Path, project: str, milestone: str, run_id: str) -> Workspace:
+    validate_run_id(run_id)
     if not is_clean(repo):
         raise WorkspaceError("repository must be clean (including untracked files) to start a run")
     base_branch = current_branch(repo)

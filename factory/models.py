@@ -10,6 +10,13 @@ ENGINE_NAMES = ("codex", "claude", "hermes", "agy", "fake")
 MERGE_POLICIES = ("ff", "pr", "human")
 PROJECT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 MILESTONE_RE = re.compile(r"^M\d+$")
+RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def validate_run_id(run_id: str) -> str:
+    if not isinstance(run_id, str) or not RUN_ID_RE.match(run_id) or ".." in run_id:
+        raise ConfigError(f"invalid run_id {run_id!r}: must match [A-Za-z0-9][A-Za-z0-9._-]* without '..'")
+    return run_id
 
 
 class ConfigError(ValueError):
@@ -80,6 +87,69 @@ def safe_relpath(p: str, name: str) -> str:
     return p
 
 
+def normalize_allow_paths(allow_paths) -> list[str]:
+    if not allow_paths:
+        return []
+    raw = allow_paths.split(",") if isinstance(allow_paths, str) else list(allow_paths)
+    out = []
+    for p in raw:
+        p = str(p).strip().replace("\\", "/")
+        if p.startswith("./"):
+            p = p[2:]
+        if p:
+            out.append(p)
+    return out
+
+
+def glob_to_regex(pattern: str) -> re.Pattern:
+    out = "^"
+    i = 0
+    while i < len(pattern):
+        ch = pattern[i]
+        if ch == "*":
+            if pattern[i + 1:i + 2] == "*":
+                if pattern[i + 2:i + 3] == "/":
+                    out += "(?:.+/)?"
+                    i += 2
+                else:
+                    out += ".*"
+                    i += 1
+            else:
+                out += "[^/]*"
+        elif ch == "?":
+            out += "[^/]"
+        else:
+            out += re.escape(ch)
+        i += 1
+    return re.compile(out + "$", re.S)
+
+
+def matches_allowed_path(path: str, patterns) -> bool:
+    norm = path.replace("\\", "/")
+    if norm.startswith("./"):
+        norm = norm[2:]
+    for raw in patterns:
+        pat = str(raw).strip().replace("\\", "/")
+        if pat.startswith("./"):
+            pat = pat[2:]
+        if not pat:
+            continue
+        if pat in (".", "*", "**"):
+            return True
+        if pat.endswith("/**") or pat.endswith("/*"):
+            prefix = re.sub(r"/+$", "", re.sub(r"/\*+$", "", pat))
+            if norm == prefix or norm.startswith(prefix + "/"):
+                return True
+        if "*" in pat or "?" in pat:
+            if glob_to_regex(pat).match(norm):
+                return True
+            continue
+        clean = pat.rstrip("/")
+        if norm == clean or norm.startswith(clean + "/"):
+            return True
+    return False
+
+
 def validate_config(raw: dict) -> dict:
     """Merge defaults and validate strictly. Returns a new normalised dict."""
     if not isinstance(raw, dict):
@@ -132,7 +202,7 @@ def validate_config(raw: dict) -> dict:
     s = cfg["stack"]
     if s.get("type") not in ("compose", "host"):
         raise ConfigError("stack.type must be compose or host")
-    _str(s.get("file", "compose.yaml"), "stack.file")
+    safe_relpath(_str(s.get("file", "compose.yaml"), "stack.file"), "stack.file")
     if s["type"] == "host":
         if not isinstance(s.get("reason"), str) or not s["reason"].strip():
             raise ConfigError("stack.type 'host' requires a written stack.reason")
@@ -180,9 +250,10 @@ def validate_milestone(m: dict, where: str = "milestone") -> dict:
     _strlist(m["acceptance"], f"{m['id']}.acceptance", allow_empty=False)
     for p in _strlist(m["allowed_paths"], f"{m['id']}.allowed_paths", allow_empty=False):
         safe_relpath(p, f"{m['id']}.allowed_paths")
-    for k in ("builder", "reviewer"):
-        if k in m and m[k] not in ENGINE_NAMES:
-            raise ConfigError(f"{m['id']}.{k}: unknown engine {m[k]!r}")
+    if "builder" in m and m["builder"] not in ENGINE_NAMES:
+        raise ConfigError(f"{m['id']}.builder: unknown engine {m['builder']!r}")
+    if "reviewer" in m and m["reviewer"] not in ENGINE_NAMES and m["reviewer"] != "cross":
+        raise ConfigError(f"{m['id']}.reviewer: unknown engine {m['reviewer']!r}")
     for k in ("ui", "checkpoint"):
         if k in m:
             _bool(m[k], f"{m['id']}.{k}")

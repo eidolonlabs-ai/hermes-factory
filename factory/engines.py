@@ -46,13 +46,25 @@ def probe(engine: str) -> tuple[bool, str]:
     return (True, path) if path else (False, f"{exe} not found on PATH")
 
 
-def base_env(extra: dict | None = None) -> dict:
+def base_env(extra: dict | None = None, *, include_pkg_pythonpath: bool = False) -> dict:
     env = dict(os.environ)
     env["ENABLE_CLAUDEAI_MCP_SERVERS"] = "false"
     for k in list(env):  # do not inherit a Hermes worker's board identity
         if k.startswith("HERMES_KANBAN"):
             env.pop(k)
-    env["PYTHONPATH"] = PKG_PARENT + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    added = env.pop("_FACTORY_PKG_PYTHONPATH", None)
+    cur_pp = [p for p in env.get("PYTHONPATH", "").split(os.pathsep) if p]
+    if include_pkg_pythonpath:
+        if PKG_PARENT not in cur_pp:
+            cur_pp.append(PKG_PARENT)
+        env["PYTHONPATH"] = os.pathsep.join(cur_pp)
+        env["_FACTORY_PKG_PYTHONPATH"] = PKG_PARENT
+    elif added:
+        cur_pp = [p for p in cur_pp if p != added]
+        if cur_pp:
+            env["PYTHONPATH"] = os.pathsep.join(cur_pp)
+        else:
+            env.pop("PYTHONPATH", None)
     env.update(extra or {})
     return env
 
@@ -92,7 +104,8 @@ def build_invocation(engine: str, *, role: str, worktree: Path, prompt: str, pro
     env = base_env({"FACTORY_ROOT": str(worktree), "FACTORY_FROZEN_FILE": str(frozen_file),
                     "FACTORY_ROLE": role, "FACTORY_ATTEMPT": str(attempt),
                     "FACTORY_LAST_MESSAGE": str(last), "FACTORY_RUN_DIR": str(run_dir),
-                    "FACTORY_MILESTONE": milestone})
+                    "FACTORY_MILESTONE": milestone},
+                   include_pkg_pythonpath=(engine in ("claude", "fake")))
     schema_file = None
     if schema is not None:
         schema_file = run_dir / "schema.json"
@@ -125,7 +138,7 @@ def build_invocation(engine: str, *, role: str, worktree: Path, prompt: str, pro
                 "--strict-mcp-config", "--mcp-config", CLAUDE_EMPTY_MCP,
                 "--model", ecfg.get("model", "opus"), "--effort", ecfg.get("effort", "high")]
         if read_only:
-            argv += ["--permission-mode", "plan", "--allowedTools", "Read,Grep,Glob"]
+            argv += ["--permission-mode", "plan", "--tools", "Read,Grep,Glob", "--allowedTools", "Read,Grep,Glob"]
         else:
             argv += ["--dangerously-skip-permissions", "--settings", str(claude_settings(run_dir))]
         if ecfg.get("max_usd_per_run"):
@@ -152,19 +165,39 @@ def build_invocation(engine: str, *, role: str, worktree: Path, prompt: str, pro
     raise ValueError(f"unknown engine {engine}")
 
 
+def _extract_claude_json(text: str) -> dict | None:
+    """Extract Claude's JSON result envelope even when stderr lines precede/follow stdout."""
+    dec = json.JSONDecoder()
+    fallback = None
+    idx = 0
+    while True:
+        pos = text.find("{", idx)
+        if pos < 0:
+            return fallback
+        try:
+            obj, end = dec.raw_decode(text, pos)
+            if isinstance(obj, dict):
+                if obj.get("type") == "result" or any(k in obj for k in ("result", "structured_output", "total_cost_usd")):
+                    return obj
+                fallback = obj
+            idx = end
+        except json.JSONDecodeError:
+            idx = pos + 1
+
+
 def parse_output(engine: str, log: Path, last: Path | None) -> dict:
     """Best-effort info from engine output: final text, cost, is_error."""
     info: dict = {}
     text = Path(log).read_text(errors="replace") if Path(log).exists() else ""
     if engine == "claude":
-        try:
-            d = json.loads(text[text.find("{"):])
+        d = _extract_claude_json(text)
+        if d is not None:
             info.update(cost_usd=d.get("total_cost_usd"), turns=d.get("num_turns"),
                         is_error=bool(d.get("is_error")),
                         final=str(d.get("result", ""))[-1500:])
             if d.get("structured_output") is not None:
                 info["structured_output"] = d["structured_output"]
-        except Exception:
+        else:
             info["final"] = text[-1500:]
     else:
         info["final"] = (last.read_text(errors="replace")[-1500:]

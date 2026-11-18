@@ -73,6 +73,18 @@ class PolicyTests(unittest.TestCase):
     def test_protected(self):
         self.assertTrue(v({"name": "chronograph", "services": {}}, prot=["chronograph"]))
 
+    def test_driver_opts_env_file_secrets_configs_volumes_from(self):
+        self.assertTrue(v(svc(volumes_from=["other"])))
+        self.assertTrue(v(svc(env_file="/etc/passwd")))
+        self.assertTrue(v({"name": "p-1", "services": {},
+                           "volumes": {"v": {"driver_opts": {"type": "none", "o": "bind", "device": "/var/run/docker.sock"}}}}))
+        self.assertTrue(v({"name": "p-1", "services": {}, "secrets": {"s": {"file": "/etc/shadow"}}}))
+        self.assertTrue(v({"name": "p-1", "services": {}, "configs": {"c": {"external": True}}}))
+        with tempfile.TemporaryDirectory() as d:
+            wt = Path(d, "wt"); wt.mkdir()
+            (wt / "env.local").write_text("A=1\n")
+            self.assertEqual(v(svc(env_file="env.local"), wt=str(wt)), [])
+
     def test_peer_factory_project_exemption(self):
         self.assertTrue(C.is_peer_factory_project("factory-20261118xyz"))
         self.assertTrue(C.is_peer_factory_project("factory-agy-1234abcd"))

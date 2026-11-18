@@ -133,6 +133,13 @@ class AuditTests(Base):
         with self.assertRaises(ValueError):
             ad.audit(self.root, base="--output=/tmp/x")
 
+    def test_invalid_base_revision_raises(self):
+        self.git_repo()
+        write(self.root, "a.js", "1\n")
+        sh(self.root, "add", "."); sh(self.root, "commit", "-qm", "init")
+        with self.assertRaises(ValueError):
+            ad.audit(self.root, base="nonexistent_ref_xyz")
+
     def test_symlinks_skipped(self):
         with tempfile.TemporaryDirectory() as outside:
             write(outside, "bad.js", f"{EV}(x)\n")

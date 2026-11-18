@@ -6,7 +6,6 @@ Sibling modules (hygiene, audit_diff, compose) are imported lazily; ImportError 
 """
 from __future__ import annotations
 
-import fnmatch
 import os
 import shlex
 import subprocess
@@ -17,6 +16,7 @@ from pathlib import Path
 
 from . import holdout, state, workspace
 from .evidence import now, tail, write_json
+from .models import matches_allowed_path
 from .process import run_process
 from .types import Check
 
@@ -51,12 +51,13 @@ class GateContext:
 
 
 def path_matches(path: str, pattern: str) -> bool:
-    pat = pattern.strip()
-    if pat in ("**", "*", "."):
-        return True
-    if pat.endswith("/"):
-        return path.startswith(pat)
-    return path == pat or fnmatch.fnmatch(path, pat) or path.startswith(pat + "/")
+    return matches_allowed_path(path, [pattern])
+
+
+def _is_holdout_path(rel: str, stored: set[str]) -> bool:
+    norm = rel.replace("\\", "/").strip("/")
+    low = "/" + norm.lower() + "/"
+    return "/holdout/" in low or ".holdout." in low or norm in stored
 
 
 def needs_human(checks: list[Check]) -> bool:
@@ -70,10 +71,13 @@ def _scope(ctx: GateContext) -> list[Check]:
     status = workspace.changed_status(ctx.worktree, ctx.base)
     status = {p: s for p, s in status.items()}
     allowed = list(ctx.milestone.get("allowed_paths", [])) + IMPLICIT_ALLOWED
+    stored = set(holdout.stored_files(ctx.project)) if ctx.freeze_sha else set()
     protected_hits = []
     if ctx.freeze_sha:  # protected paths are enforced once the contract is frozen
         for p, s in sorted(status.items()):
-            if s != "A" and any(path_matches(p, q) for q in ctx.config["protected"]):
+            if path_matches(p, ".factory/") or _is_holdout_path(p, stored):
+                protected_hits.append(f"{s} {p}")
+            elif s != "A" and any(path_matches(p, q) for q in ctx.config["protected"]):
                 protected_hits.append(f"{s} {p}")
     if protected_hits:
         return [Check("scope", "FAIL", f"{HUMAN_PREFIX} protected path changed; human decision needed",

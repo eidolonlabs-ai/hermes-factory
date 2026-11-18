@@ -181,6 +181,13 @@ class PluginTests(unittest.TestCase):
             self.assertIsNone(self.plugin.guard("terminal", {"command": "echo x > src/a.txt"}))
             self.assertIn("scripts/verify.sh M3", self.plugin.verify_nudge(coding=True, attempt=0)["message"])
 
+    def test_raw_string_apply_patch_and_workdir_block(self):
+        with self.run_env():
+            patch_str = "*** Begin Patch\n*** Update File: .env\n*** End Patch"
+            self.assertEqual(self.plugin.guard("apply_patch", patch_str)["action"], "block")
+            res = self.plugin.guard("terminal", {"command": "echo x > verify.sh", "workdir": str(self.wt / "scripts")})
+            self.assertEqual(res["action"], "block")
+
 
 LEGACY = """model: x
 
@@ -300,6 +307,22 @@ class SetupTests(unittest.TestCase):
         p1 = self.home / "profiles" / "p1"
         self.assertIn("role", (p1 / "SOUL.md").read_text())
         self.assertEqual((p1 / "SOUL.md.pre-factory").read_text(), "cloned soul\n")
+
+    def test_broken_plugin_symlink_replaced_and_enable_failure_fails_setup(self):
+        hermes_setup.run_setup()
+        dest = self.home / "profiles/factory-coder/plugins/factory"
+        import shutil
+        shutil.rmtree(dest)
+        os.symlink(self.tmp / "nonexistent-target", dest)
+        res = hermes_setup.run_setup()
+        self.assertTrue(res["ok"], res)
+        self.assertTrue(dest.is_dir() and not dest.is_symlink())
+
+        bindir = self.tmp / "bin"
+        write_exe(bindir / "hermes", "#!/bin/sh\nif [ \"$3\" = \"plugins\" ] && [ \"$4\" = \"enable\" ]; then exit 2; fi\nexit 0\n")
+        res2 = hermes_setup.run_setup()
+        self.assertFalse(res2["ok"])
+        self.assertIn("could not enable plugin", res2["error"])
 
 
 if __name__ == "__main__":

@@ -19,13 +19,17 @@ def pick_reviewer(ms: dict, cfg: dict, builder: str) -> str:
     return engines.resolve_review_engine(ms.get("reviewer") or cfg["roles"]["review"], builder)
 
 
-def pending_milestones(repo: Path, st: dict) -> list[dict]:
+def all_milestones(repo: Path, st: dict) -> list[dict]:
     ms = list(load_plan(repo)["milestones"])
     ids = {m["id"] for m in ms}
     for mid, m in (st.get("extra_milestones") or {}).items():
         if mid not in ids:
             ms.append(validate_milestone(dict(m), f"extra {mid}"))
-    return [m for m in ms if m["id"] not in st.get("done", {})]
+    return ms
+
+
+def pending_milestones(repo: Path, st: dict) -> list[dict]:
+    return [m for m in all_milestones(repo, st) if m["id"] not in st.get("done", {})]
 
 
 def run_pipeline(project: str, *, until: str | None = None, next_only: bool = False,
@@ -44,12 +48,17 @@ def run_pipeline(project: str, *, until: str | None = None, next_only: bool = Fa
 
     if not st.get("freeze_sha"):
         return stop("not_frozen", None, "run `factory freeze` after M0 is approved")
-    todo = pending_milestones(repo, st)
+    ms_list = all_milestones(repo, st)
     if until:
-        ids = [m["id"] for m in load_plan(repo)["milestones"]] + list(st.get("extra_milestones") or {})
+        ids = [m["id"] for m in ms_list]
         if until not in ids:
             return stop("error", until, f"unknown milestone {until}")
+        ms_list = ms_list[:ids.index(until) + 1]
+    done = st.get("done") or {}
+    todo = [m for m in ms_list if m["id"] not in done]
     if not todo:
+        if until:
+            return stop("stopped", until, f"milestone {until} already reached")
         summary["finished"] = now()
         return summary
     for ms in todo:
@@ -73,5 +82,7 @@ def run_pipeline(project: str, *, until: str | None = None, next_only: bool = Fa
             return stop("checkpoint", mid, f"{mid} is flagged as a checkpoint; human approval needed")
         if until == mid or next_only:
             return stop("stopped", mid, "reached --until/--next limit")
+    if until:
+        return stop("stopped", until, "reached --until limit")
     summary["finished"] = now()
     return summary

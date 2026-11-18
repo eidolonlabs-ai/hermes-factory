@@ -15,15 +15,22 @@ from factory.types import GuardContext
 
 def _frozen(root: str, env) -> list[str]:
     """Frozen list: env FACTORY_FROZEN_FILE, else <root>/.factory/frozen.json, else []."""
-    path = env.get("FACTORY_FROZEN_FILE") or os.path.join(root, ".factory", "frozen.json")
+    explicit = env.get("FACTORY_FROZEN_FILE")
+    path = explicit or os.path.join(root, ".factory", "frozen.json")
     try:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
-        return [str(x) for x in data] if isinstance(data, list) else []
+        if not isinstance(data, list):
+            if explicit:
+                raise ValueError("FACTORY_FROZEN_FILE must contain a JSON list")
+            return []
+        return [str(x) for x in data]
     except FileNotFoundError:
+        if explicit:
+            raise  # explicitly configured but missing: fail closed in the caller
         return []
     except (OSError, ValueError):
-        if env.get("FACTORY_FROZEN_FILE"):
+        if explicit:
             raise  # explicitly configured but unreadable: fail closed in the caller
         return []
 
@@ -96,16 +103,39 @@ def _decide(payload: dict, env) -> tuple[Decision, GuardContext]:
     return worst, wctx
 
 
+def _effective_cwd(payload: dict, root: str) -> str:
+    """Resolve effective cwd for relative tool paths (supports Hermes terminal workdir)."""
+    from .guard import SHELL_TOOLS
+    p_cwd = payload.get("cwd")
+    p_cwd = p_cwd if isinstance(p_cwd, str) and p_cwd.strip() else ""
+    tool_name = str(payload.get("tool_name") or "").lower()
+    inp = payload.get("tool_input")
+    if tool_name in SHELL_TOOLS and isinstance(inp, dict):
+        wd = inp.get("workdir") or inp.get("cwd")
+        if isinstance(wd, str) and wd.strip():
+            wd = wd.strip()
+            return wd if os.path.isabs(wd) else os.path.join(p_cwd or root, wd)
+    if p_cwd and root:
+        r_real = os.path.realpath(root).rstrip(os.sep)
+        c_real = os.path.realpath(p_cwd)
+        if c_real == r_real or c_real.startswith(r_real + os.sep):
+            return p_cwd
+    return ""
+
+
 def _context(payload: dict, env) -> GuardContext:
     cwd = payload.get("cwd") or os.getcwd()
     if not env.get("FACTORY_FROZEN_FILE"):
         found = _from_worktree(env.get("FACTORY_ROOT") or cwd)
-        if found and os.path.exists(found[1]):
-            env = {**env, "FACTORY_ROOT": env.get("FACTORY_ROOT") or found[0], "FACTORY_FROZEN_FILE": found[1]}
+        if found:
+            env = {**env, "FACTORY_ROOT": env.get("FACTORY_ROOT") or found[0]}
+            if os.path.exists(found[1]) or os.path.isdir(os.path.dirname(found[1])):
+                env = {**env, "FACTORY_FROZEN_FILE": found[1]}
     root = env.get("FACTORY_ROOT") or cwd
     return GuardContext(root=root, control_dir=".factory/", frozen=_frozen(root, env),
                         contract_phase=env.get("FACTORY_MILESTONE") == "M0",
-                        unattended=env.get("FACTORY_UNATTENDED", "1") != "0")
+                        unattended=env.get("FACTORY_UNATTENDED", "1") != "0",
+                        cwd=_effective_cwd(payload, root))
 
 
 def _parse(raw: str) -> dict:

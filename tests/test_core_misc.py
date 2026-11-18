@@ -61,6 +61,13 @@ class ModelTests(unittest.TestCase):
             with self.assertRaises(ConfigError, msg=str(raw)):
                 models.validate_plan(raw)
 
+    def test_milestone_reviewer_cross_allowed_and_stack_file_safe(self):
+        good = copy.deepcopy(PLAN)
+        good["milestones"][0]["reviewer"] = "cross"
+        models.validate_plan(good)
+        with self.assertRaises(ConfigError):
+            models.validate_config({"project": "x", "stack": {"type": "compose", "file": "../compose.yaml"}})
+
 
 class HoldoutScrubTests(unittest.TestCase):
     def test_pytest_format(self):
@@ -154,6 +161,24 @@ class EngineTests(CoreCase):
             engines.build_invocation("fake", **kw)
         self.assertEqual(engines.other_vendor("codex"), "claude")
         self.assertEqual(engines.resolve_review_engine("cross", "claude"), "codex")
+
+    def test_claude_read_only_restricts_tools_parse_output_stderr_and_pythonpath(self):
+        d = self.tmp / "run3"; d.mkdir()
+        cfg = models.validate_config({"project": "x"})
+        inv_ro = engines.build_invocation("claude", role="intake", worktree=self.tmp, prompt="P",
+                                          prompt_file=d / "p.md", run_dir=d, cfg=cfg, frozen=[], read_only=True)
+        self.assertIn("--tools", inv_ro.argv)
+        self.assertEqual(inv_ro.argv[inv_ro.argv.index("--tools") + 1], "Read,Grep,Glob")
+
+        inv_codex = engines.build_invocation("codex", role="build", worktree=self.tmp, prompt="P",
+                                             prompt_file=d / "p.md", run_dir=d, cfg=cfg, frozen=[])
+        self.assertNotIn(engines.PKG_PARENT, inv_codex.env.get("PYTHONPATH", "").split(os.pathsep))
+
+        log = d / "claude.log"
+        log.write_text('Warning {noise}\n{"type":"result","total_cost_usd":0.42,"num_turns":2,"is_error":false,"result":"ok","structured_output":{"decision":"ready_for_planning"}}\nstderr tail\n')
+        parsed = engines.parse_output("claude", log, None)
+        self.assertEqual(parsed["cost_usd"], 0.42)
+        self.assertEqual(parsed["structured_output"]["decision"], "ready_for_planning")
 
 
 INTAKE_OK = {"decision": "needs_clarification", "assumptions": ["a"],
@@ -298,6 +323,32 @@ class CliTests(CoreCase):
         self.assertTrue(s["freeze_sha"])
         self.assertEqual(s["holdout_files"], ["tests/holdout/h.txt"])
 
+    def test_detach_fast_fail_relative_feedback_run_id_and_status_falsy_pid(self):
+        self.make_repo()
+        env = {"FACTORY_HOME": os.environ["FACTORY_HOME"], "FACTORY_FAKE_ENGINE": "/nonexistent/fake.py",
+               **{k: v for k, v in os.environ.items() if k.startswith("GIT_")}}
+        fb = self.tmp / "fb.txt"
+        fb.write_text("fix from cwd\n")
+        # Relative feedback-file when invoking from self.tmp (outside self.repo)
+        r = cli("run", "--milestone", "M1", "--role", "build", "--engine", "fake", "--detach",
+                "--feedback-file", "fb.txt", "--repo", str(self.repo), env=env, cwd=str(self.tmp))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        rid = json.loads(r.stdout)["run_id"]
+        w = cli("wait", rid, "--max", "30", "--repo", str(self.repo), env=env)
+        self.assertEqual(w.returncode, 1, w.stdout + w.stderr)
+        self.assertEqual(json.loads(w.stdout)["status"], "engine_unavailable")
+
+        # Invalid --run-id path traversal rejected
+        bad = cli("run", "--milestone", "M1", "--role", "build", "--engine", "fake",
+                  "--run-id", "../../evil", "--repo", str(self.repo), env=env)
+        self.assertEqual(bad.returncode, 2)
+
+        # status ignores running entry with falsy pid
+        rd = state.run_dir("demo", "r-nopid"); rd.mkdir(parents=True)
+        (rd / "status.json").write_text(json.dumps({"state": "running", "pid": None}))
+        st = json.loads(cli("status", "--repo", str(self.repo), env=env).stdout)
+        self.assertEqual(st["active_runs"], [])
+
 
 class PipelineTests(CoreCase):
     def test_pipeline_stops_at_checkpoint_then_resumes(self):
@@ -347,6 +398,16 @@ class PipelineTests(CoreCase):
         s = run_pipeline("demo")
         self.assertEqual(s["status"], "completed")
         self.assertEqual([m["milestone"] for m in s["milestones"]], ["M9"])
+
+    def test_pipeline_until_already_done_stops_immediately(self):
+        from factory.pipeline import run_pipeline
+        self.make_repo()
+        self.fake(GOOD)
+        s1 = run_pipeline("demo", until="M1")
+        self.assertEqual((s1["status"], [m["milestone"] for m in s1["milestones"]]), ("stopped", ["M1"]))
+        s2 = run_pipeline("demo", until="M1")
+        self.assertEqual((s2["status"], s2["milestones"]), ("stopped", []))
+        self.assertNotIn("M2", state.load_state("demo")["done"])
 
 
 if __name__ == "__main__":

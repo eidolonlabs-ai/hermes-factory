@@ -110,6 +110,13 @@ class ComposeGateTest(CoreCase):
         self.assertFalse(res["ok"])
         self.assertTrue(any("container_name" in v for v in res["violations"]), res)
 
+    def test_preview_rejects_container_name_in_overlay(self):
+        r = self.make_compose_repo()
+        (r / "compose.preview.yaml").write_text("services:\n  db:\n    container_name: evil-preview\n")
+        res = compose.preview(str(r), "compose.yaml", "demo", log=self.tmp / "preview.log")
+        self.assertFalse(res["ok"])
+        self.assertTrue(any("container_name" in v for v in res["violations"]), res)
+
 
 if __name__ == "__main__":
     unittest.main()

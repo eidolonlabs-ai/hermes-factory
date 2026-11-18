@@ -63,7 +63,7 @@ def _live_runs() -> list[str]:
 
 class _Run:
     def __init__(self, dry: bool):
-        self.dry, self.actions, self.warnings = dry, [], []
+        self.dry, self.actions, self.warnings, self.errors = dry, [], [], []
 
     def act(self, what: str, fn=None) -> None:
         self.actions.append(("would " if self.dry else "") + what)
@@ -71,6 +71,10 @@ class _Run:
             fn()
 
     def warn(self, msg: str) -> None:
+        self.warnings.append(msg)
+
+    def fail(self, msg: str) -> None:
+        self.errors.append(msg)
         self.warnings.append(msg)
 
 
@@ -100,7 +104,9 @@ def _install_plugin(run: _Run, plugin_src: Path, pdir: Path, name: str) -> None:
     dest = pdir / "plugins" / PLUGIN_NAME
 
     def copy():
-        if dest.exists():
+        if dest.is_symlink():
+            dest.unlink()
+        elif dest.exists():
             shutil.rmtree(dest)
         shutil.copytree(plugin_src, dest, ignore=_IGNORE)
     run.act(f"install plugin -> {dest}", copy)
@@ -110,7 +116,7 @@ def _install_plugin(run: _Run, plugin_src: Path, pdir: Path, name: str) -> None:
         _hermes("-p", name, "plugins", "disable", PLUGIN_NAME)
         code, text = _hermes("-p", name, "plugins", "enable", PLUGIN_NAME, "--no-allow-tool-override")
         if code != 0:
-            run.warn(f"could not enable plugin in {name}: {text[-300:]} "
+            run.fail(f"could not enable plugin in {name}: {text[-300:]} "
                      f"(run: hermes -p {name} plugins enable {PLUGIN_NAME})")
     run.act(f"enable plugin {PLUGIN_NAME} in profile {name} (reloads it)", enable)
 
@@ -167,5 +173,8 @@ def run_setup(dry_run: bool = False, with_profiles: bool = True) -> dict:
         proot = profiles_root(home)
         for pdef in sorted(p for p in profiles_src.iterdir() if (p / "profile.json").is_file()):
             _setup_profile(run, pdef, proot, skills_src, plugin_src)
+    if run.errors:
+        return {"ok": False, "error": "; ".join(run.errors), "dry_run": dry_run,
+                "hermes_home": str(home), "actions": run.actions, "warnings": run.warnings}
     return {"ok": True, "dry_run": dry_run, "hermes_home": str(home),
             "actions": run.actions, "warnings": run.warnings, "next": "factory doctor"}

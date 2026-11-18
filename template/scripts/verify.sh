@@ -14,7 +14,8 @@ MILESTONE="$1"; LEVEL="${BASH_REMATCH[1]}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-$(basename "$ROOT" | tr -cs 'a-z0-9' '-')-local}"
+_proj_slug="$(basename "$ROOT" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-*//;s/-*$//')"
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-${_proj_slug:-factory}-local}"
 ART="${FACTORY_ARTIFACTS:-/tmp/${COMPOSE_PROJECT_NAME}-verify}"
 mkdir -p "$ART"
 

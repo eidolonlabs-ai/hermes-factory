@@ -10,6 +10,12 @@ LEVEL="${BASH_REMATCH[1]}"
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [[ -d tests/holdout ]] || { echo "no holdout tests present (NOT_RUN)"; exit 3; }
 
+(( LEVEL >= 1 )) || exit 0
+EXPR="m1"
+for (( i=2; i<=LEVEL; i++ )); do
+  EXPR="$EXPR or m$i"
+done
+
 # Example for pytest; the M0 architect adapts this. Keep -rA so failures list test ids.
 docker compose -p "$COMPOSE_PROJECT_NAME" -f compose.yaml --profile test \
-  run --rm -T test python -m pytest tests/holdout -q -rA -m "$(seq -s ' or ' -f 'm%g' 1 "$LEVEL")"
+  run --rm -T test python -m pytest tests/holdout -q -rA -m "$EXPR"

@@ -76,6 +76,19 @@ def _load_report(engine: str, last: Path, info: dict, log: Path) -> dict:
     if info.get("structured_output") is not None:
         return info["structured_output"]
     text = last.read_text() if last.exists() else (info.get("final") or log.read_text(errors="replace"))
+    dec = json.JSONDecoder()
+    idx = 0
+    while True:
+        pos = text.find("{", idx)
+        if pos < 0:
+            break
+        try:
+            obj, end = dec.raw_decode(text, pos)
+            if isinstance(obj, dict) and "decision" in obj:
+                return obj
+            idx = end
+        except json.JSONDecodeError:
+            idx = pos + 1
     start, end = text.find("{"), text.rfind("}")
     return json.loads(text[start:end + 1])
 

@@ -67,6 +67,15 @@ class HermesHookEnvTests(unittest.TestCase):
         out, _ = hooks_adapters.hermes_pre_tool_call(self.payload(str(self.wt)), {})
         self.assertEqual(json.loads(out)["action"], "block")
 
+    def test_worktree_subdir_resolves_root_without_frozen_file(self):
+        (self.wt / "sub").mkdir()
+        self.frozen_file.unlink()
+        (self.frozen_file.parent).rmdir()
+        p = json.dumps({"hook_event_name": "pre_tool_call", "tool_name": "write_file",
+                        "tool_input": {"path": "../.factory/config.json"}, "cwd": str(self.wt / "sub")})
+        out, _ = hooks_adapters.hermes_pre_tool_call(p, {})
+        self.assertEqual(json.loads(out)["action"], "block")
+
 
 class SymlinkPathTests(unittest.TestCase):
     def test_root_and_path_differ_only_by_symlink(self):

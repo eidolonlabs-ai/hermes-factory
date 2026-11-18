@@ -16,14 +16,49 @@ from . import state, workspace
 DEFAULT_HOLDOUT_DIR = "tests/holdout"
 
 
+def _ensure_safe_subpath(root: Path, rel: str) -> Path:
+    """Verify `rel` is a safe repo-relative path with no symlinks along any component."""
+    p = Path(rel)
+    if p.is_absolute() or ".." in p.parts or not p.parts:
+        raise ValueError(f"unsafe holdout path: {rel}")
+    root_real = root.resolve()
+    cur = root
+    for part in p.parts:
+        cur = cur / part
+        if cur.is_symlink():
+            raise ValueError(f"symlink not allowed in holdout path: {cur.relative_to(root)}")
+    resolved = cur.resolve()
+    try:
+        resolved.relative_to(root_real)
+    except ValueError:
+        raise ValueError(f"holdout path escapes root: {rel}") from None
+    return cur
+
+
+def _prune_empty_dirs(stop_at: Path, dirs) -> None:
+    for d in sorted(set(dirs), key=lambda x: -len(x.parts)):
+        while d != stop_at and d.is_dir() and not any(d.iterdir()):
+            try:
+                d.rmdir()
+            except OSError:
+                break
+            d = d.parent
+
+
 def _expand(root: Path, entries: list[str]) -> list[str]:
     out = set()
     for e in entries:
         p = root / e.rstrip("/")
+        if p.is_symlink():
+            raise ValueError(f"holdout entry must not be a symlink: {e}")
         if p.is_file():
             out.add(e.rstrip("/"))
         elif p.is_dir():
-            out.update(f.relative_to(root).as_posix() for f in p.rglob("*") if f.is_file())
+            for f in p.rglob("*"):
+                if f.is_symlink():
+                    raise ValueError(f"holdout tree must not contain symlinks: {f.relative_to(root)}")
+                if f.is_file():
+                    out.add(f.relative_to(root).as_posix())
     return sorted(out)
 
 
@@ -42,24 +77,39 @@ def freeze(repo: Path, project: str, force: bool = False) -> dict:
     missing = [p for p in frozen if not (repo / p).exists()]
     if missing:
         raise ValueError("frozen paths do not exist: " + ", ".join(missing))
+    for p in frozen:
+        _ensure_safe_subpath(repo, p)
     store = state.holdout_store(project)
     moved = _expand(repo, [DEFAULT_HOLDOUT_DIR] + plan["holdout"])
+    for rel in moved:
+        _ensure_safe_subpath(repo, rel)
+    if force and store.is_dir():
+        moved_set = set(moved)
+        pruned_dirs = []
+        for old in stored_files(project):
+            keep = (old in moved_set) if moved else (
+                old.startswith(DEFAULT_HOLDOUT_DIR + "/")
+                or any(old == p.rstrip("/") or old.startswith(p.rstrip("/") + "/") for p in plan["holdout"])
+            )
+            if not keep:
+                target = store / old
+                target.unlink(missing_ok=True)
+                pruned_dirs.append(target.parent)
+        _prune_empty_dirs(store, pruned_dirs)
     for rel in moved:
         dst = store / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(repo / rel), str(dst))
-    for d in sorted({(repo / r).parent for r in moved}, key=lambda x: -len(x.parts)):
-        while d != repo and d.is_dir() and not any(d.iterdir()):
-            d.rmdir()
-            d = d.parent
+    _prune_empty_dirs(repo, [(repo / r).parent for r in moved])
     if moved:
         workspace.git(repo, "add", "-A")
         workspace.git(repo, "commit", "-q", "-m", "chore(factory): move holdouts out of the repo")
     sha = workspace.head_sha(repo)
+    current_holdouts = stored_files(project)
 
     def upd(s):
         s["freeze_sha"], s["frozen"], s["frozen_at"] = sha, frozen, now()
-        s["holdout_files"] = sorted(set(s.get("holdout_files", [])) | set(moved))
+        s["holdout_files"] = current_holdouts
     state.update_state(project, upd)
     return {"freeze_sha": sha, "frozen": frozen, "holdouts_moved": len(moved)}
 
@@ -68,18 +118,33 @@ def stored_files(project: str) -> list[str]:
     store = state.holdout_store(project)
     if not store.is_dir():
         return []
-    return sorted(f.relative_to(store).as_posix() for f in store.rglob("*") if f.is_file())
+    return sorted(f.relative_to(store).as_posix() for f in store.rglob("*") if f.is_file() and not f.is_symlink())
 
 
 def stage_in(project: str, worktree: Path) -> list[Path]:
-    """Copy stored holdouts into the worktree. Returns created paths for cleanup."""
-    created = []
+    """Copy stored holdouts into the worktree. Fails on symlinks or pre-existing holdout files."""
+    worktree = Path(worktree)
+    holdout_dir = worktree / DEFAULT_HOLDOUT_DIR
+    if holdout_dir.is_symlink():
+        raise ValueError(f"symlink not allowed at {DEFAULT_HOLDOUT_DIR}")
+    if holdout_dir.exists() and any(holdout_dir.rglob("*")):
+        raise ValueError(f"untrusted pre-existing entries under {DEFAULT_HOLDOUT_DIR}/")
+    created: list[Path] = []
     store = state.holdout_store(project)
-    for rel in stored_files(project):
-        dst = Path(worktree) / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(store / rel, dst)
-        created.append(dst)
+    try:
+        for rel in stored_files(project):
+            src = store / rel
+            if src.is_symlink():
+                raise ValueError(f"holdout store contains symlink: {rel}")
+            dst = _ensure_safe_subpath(worktree, rel)
+            if dst.exists() or dst.is_symlink():
+                raise ValueError(f"holdout staging collision with worktree path: {rel}")
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            created.append(dst)
+    except Exception:
+        remove(worktree, created)
+        raise
     return created
 
 
@@ -161,7 +226,11 @@ def run_holdouts(*, project: str, worktree: Path, milestone_id: str, cfg: dict, 
         argv[0] = str(Path(worktree) / argv[0])
     if not Path(argv[0]).exists() and "/" in argv[0]:
         return Check("holdout", "NOT_RUN", f"holdout command not found: {h['command'].split()[0]}")
-    created = stage_in(project, worktree)
+    try:
+        created = stage_in(project, worktree)
+    except ValueError as e:
+        return Check("holdout", "FAIL", f"holdout isolation violated: {e}",
+                     duration_s=time.monotonic() - t0)
     raw = Path(out_dir) / "holdout.raw.log"  # never shown to builders
     try:
         res = run_process(argv, worktree, cfg["verify"]["timeout_min"] * 60, raw, env=env)

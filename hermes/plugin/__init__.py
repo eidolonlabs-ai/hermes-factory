@@ -8,7 +8,7 @@ upgraded independently.
 Registers:
   pre_tool_call  guard; blocks on deny, on any error, and when the engine is missing
   pre_verify     one nudge per turn to run the milestone's verify script before finishing
-  skills         factory:factory, factory:factory-worker
+  skills         factory, factory-worker, and the 8 unified factory-* stage skills
 
 The guard is active in the `factory-coder` profile and in any session started by a factory run
 (FACTORY_ROOT / FACTORY_FROZEN_FILE in the environment). Elsewhere it does nothing, so
@@ -141,8 +141,14 @@ def guard(tool_name: str = "", args: dict | None = None, **_kwargs):
         exe = _hook_bin(env)
         if not exe:
             return _block(f"`factory-hook` not found on PATH; {_INSTALL_HINT}")
+        cwd = _cwd()
+        if (tool_name or "").lower() in ("terminal", "bash", "shell", "local_shell", "exec_command") and isinstance(args, dict):
+            wd = args.get("workdir") or args.get("cwd")
+            if isinstance(wd, str) and wd.strip():
+                wd = wd.strip()
+                cwd = wd if os.path.isabs(wd) else os.path.join(cwd, wd)
         payload = {"hook_event_name": "pre_tool_call", "tool_name": tool_name,
-                   "tool_input": args if isinstance(args, dict) else {}, "cwd": _cwd()}
+                   "tool_input": args if isinstance(args, (dict, str)) else {}, "cwd": cwd}
         proc = subprocess.run([exe, "hermes"], input=json.dumps(payload, default=str),
                               capture_output=True, text=True, timeout=_TIMEOUT_S, env=dict(env))
         if proc.returncode != 0:

@@ -51,3 +51,4 @@ class GuardContext:
     holdout_markers: list[str] = field(default_factory=lambda: ["holdout/", ".holdout."])
     unattended: bool = True                    # "ask" is reported as-is; adapters map it
     contract_phase: bool = False               # M0: architect/reviewer author plan.json + holdouts
+    cwd: str = ""                              # effective working directory for relative shell targets

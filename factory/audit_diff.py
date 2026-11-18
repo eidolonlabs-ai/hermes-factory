@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 
+from .models import glob_to_regex, matches_allowed_path, normalize_allow_paths
 from .types import Check
 
 SKIP_DIRS = {"node_modules", "dist", "build", "coverage", ".git", ".factory", ".factory"}
@@ -56,68 +57,7 @@ PY_SQL_FORMAT_RE = _rx([r"""(?:SELECT|INSERT\s+INTO|UPDATE|DELETE\s+FROM)\b.*['"
 
 
 # ---------------------------------------------------------------- glob helpers
-
-def normalize_allow_paths(allow_paths) -> list[str]:
-    if not allow_paths:
-        return []
-    raw = allow_paths.split(",") if isinstance(allow_paths, str) else list(allow_paths)
-    out = []
-    for p in raw:
-        p = str(p).strip().replace("\\", "/")
-        if p.startswith("./"):
-            p = p[2:]
-        if p:
-            out.append(p)
-    return out
-
-
-def glob_to_regex(pattern: str) -> re.Pattern:
-    out = "^"
-    i = 0
-    while i < len(pattern):
-        ch = pattern[i]
-        if ch == "*":
-            if pattern[i + 1:i + 2] == "*":
-                if pattern[i + 2:i + 3] == "/":
-                    out += "(?:.+/)?"
-                    i += 2
-                else:
-                    out += ".*"
-                    i += 1
-            else:
-                out += "[^/]*"
-        elif ch == "?":
-            out += "[^/]"
-        else:
-            out += re.escape(ch)
-        i += 1
-    return re.compile(out + "$", re.S)
-
-
-def matches_allowed_path(path: str, patterns) -> bool:
-    norm = path.replace("\\", "/")
-    if norm.startswith("./"):
-        norm = norm[2:]
-    for raw in patterns:
-        pat = str(raw).strip().replace("\\", "/")
-        if pat.startswith("./"):
-            pat = pat[2:]
-        if not pat:
-            continue
-        if pat in (".", "*", "**"):
-            return True
-        if pat.endswith("/**") or pat.endswith("/*"):
-            prefix = re.sub(r"/+$", "", re.sub(r"/\*+$", "", pat))
-            if norm == prefix or norm.startswith(prefix + "/"):
-                return True
-        if "*" in pat or "?" in pat:
-            if glob_to_regex(pat).match(norm):
-                return True
-            continue
-        clean = pat.rstrip("/")
-        if norm == clean or norm.startswith(clean + "/"):
-            return True
-    return False
+# Re-exported from factory.models (shared with gate.path_matches).
 
 
 # ---------------------------------------------------------------- file collection
@@ -170,7 +110,9 @@ def _walk(root: str) -> list[tuple[str, str]]:
 def _git_changed(real_root: str, top: str, base: str | None) -> list[tuple[str, str]]:
     paths: set[str] = set()
     st = _git(["status", "--porcelain", "-z", "-uall"], real_root)
-    if st.returncode == 0 and st.stdout:
+    if st.returncode != 0:
+        raise ValueError(f"git status failed: {st.stderr.strip()}")
+    if st.stdout:
         toks = st.stdout.split("\0")
         i = 0
         while i < len(toks):
@@ -185,8 +127,11 @@ def _git_changed(real_root: str, top: str, base: str | None) -> list[tuple[str, 
                 continue
             paths.add(os.path.normpath(os.path.join(top, rel)))
     if base is not None and base.strip():
-        df = _git(["diff", "--name-only", "-z", base.strip(), "--"], real_root)
-        if df.returncode == 0 and df.stdout:
+        rev = base.strip()
+        df = _git(["diff", "--name-only", "-z", rev, "--"], real_root)
+        if df.returncode != 0:
+            raise ValueError(f"git diff failed for base {rev!r}: {df.stderr.strip()}")
+        if df.stdout:
             for rel in df.stdout.split("\0"):
                 if rel:
                     paths.add(os.path.normpath(os.path.join(top, rel)))
