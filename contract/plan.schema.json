@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "harness-contract/plan.schema.json",
-  "title": "Milestone plan (.harness/plan.json), written in M0, frozen at checkpoint 1",
+  "$id": "factory-contract/plan.schema.json",
+  "title": "Milestone plan (.factory/plan.json), written in M0, frozen at checkpoint 1",
   "type": "object",
   "required": [
     "milestones",

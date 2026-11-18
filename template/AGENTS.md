@@ -1,10 +1,10 @@
 # Agent rules for this repository
 
 This repository is built by unattended coding agents, milestone by milestone, and judged by
-an external gate (see `CONTRACT.md` in hermes-agent-harness). Requirements are in
+an external gate (see `CONTRACT.md` in hermes-agent-factory). Requirements are in
 `inputs/HANDOFF.md` and `inputs/CLARIFICATIONS.md`; host constraints in
 `inputs/ENVIRONMENT.md`; the technical spec in `SPEC.md`; the milestone plan in
-`.harness/plan.json`.
+`.factory/plan.json`.
 
 ## Working unattended
 - No human is available during a run. Never ask questions or wait for approval.
@@ -15,7 +15,7 @@ an external gate (see `CONTRACT.md` in hermes-agent-harness). Requirements are i
 ## Done means verified
 - A milestone is done only when `scripts/verify.sh <MILESTONE>` exits 0 on a fresh stack.
   Your own report is not evidence; the gate re-runs everything.
-- Files listed under `frozen` in `.harness/plan.json` are immutable after checkpoint 1.
+- Files listed under `frozen` in `.factory/plan.json` are immutable after checkpoint 1.
   Never edit, rename, skip or delete them. Add new test files instead, tagged with an
   existing milestone so `verify.sh` runs them.
 - Bugs found in review: write a failing test first, then fix the root cause.
@@ -36,7 +36,7 @@ an external gate (see `CONTRACT.md` in hermes-agent-harness). Requirements are i
 
 ## Context hygiene
 - Redirect verbose output (builds, installs, test runs) to log files under
-  `${HARNESS_ARTIFACTS:-/tmp}`; read exit codes and `tail` only.
+  `${FACTORY_ARTIFACTS:-/tmp}`; read exit codes and `tail` only.
 
 ## Git
 - Commit at the end of the milestone with conventional messages (`feat(m2): ...`,

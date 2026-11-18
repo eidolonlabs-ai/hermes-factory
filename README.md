@@ -1,4 +1,4 @@
-# Hermes Harness
+# Hermes Factory
 
 Hand [Hermes Agent](https://hermes-agent.nousresearch.com) a spec, answer its questions,
 approve a plan, and let it build your app for hours, milestone by milestone, without clicking
@@ -17,18 +17,18 @@ you ──spec──► Hermes ── intake questions ──► you
                              verify.sh on the live stack · holdouts · diff audit · candidate hash
 ```
 
-Part of a family of platform-native harnesses that share one [`CONTRACT.md`](CONTRACT.md):
-this one (Hermes), [`codex-harness`](https://github.com/theRealMarkCastillo/codex-harness)
-(Codex), and [`antigravity-harness`](https://github.com/theRealMarkCastillo/antigravity-harness)
+Part of a family of platform-native factoryes that share one [`CONTRACT.md`](CONTRACT.md):
+this one (Hermes), [`codex-factory`](https://github.com/eidolonlabs-ai/codex-factory)
+(Codex), and [`antigravity-factory`](https://github.com/eidolonlabs-ai/antigravity-factory)
 (Antigravity).
 
 ## Why
 
 Unattended coding agents fail in four ways: they stop early and claim success, they drown in
-logs, they "fix" tests instead of code, and they block on permission prompts. This harness
+logs, they "fix" tests instead of code, and they block on permission prompts. This factory
 answers each one outside the agent:
 
-| Failure | What the harness does |
+| Failure | What the factory does |
 |---|---|
 | "Done" without proof | An external gate re-runs everything; the agent's report is never evidence. `NOT_RUN` is never `PASS`. |
 | Weakened tests | Tests are frozen at plan approval (hash-checked), some are **holdouts** kept out of the repo, and an in-agent guard blocks edits to frozen files. |
@@ -44,7 +44,7 @@ their own vendor's code that the other vendor found. See [`examples/chronograph`
 |---|---|---|
 | Antigravity | 13 (2) | 8 |
 | Hermes forge (predecessor) | 7 (0) | 2 (+1) |
-| **hermes-agent-harness** | **4 (1)** | 6, 3 of them harness bugs found and fixed during this first run |
+| **hermes-agent-factory** | **4 (1)** | 6, 3 of them factory bugs found and fixed during this first run |
 
 ## Requirements
 
@@ -57,77 +57,77 @@ their own vendor's code that the other vendor found. See [`examples/chronograph`
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/theRealMarkCastillo/hermes-harness/main/install.sh | bash
-harness doctor
+curl -fsSL https://raw.githubusercontent.com/eidolonlabs-ai/hermes-factory/main/install.sh | bash
+factory doctor
 ```
 
 That installs the engine with [uv](https://docs.astral.sh/uv/) (or pipx) and runs
-`harness setup`. The same thing by hand:
+`factory setup`. The same thing by hand:
 
 ```bash
-uv tool install git+https://github.com/theRealMarkCastillo/hermes-harness
-harness setup            # --dry-run to preview
+uv tool install git+https://github.com/eidolonlabs-ai/hermes-factory
+factory setup            # --dry-run to preview
 ```
 
 | Piece | What you get | Installed by |
 |---|---|---|
-| Engine | `harness` and `harness-hook` on PATH (Python stdlib only) | `uv tool install` / `pipx install` |
-| Skills | `harness`, `harness-worker` in your Hermes skill index | `harness setup` |
-| Profiles | `harness-coder` (Hermes as a coding engine) and `harness-worker` (kanban operator), cloned from your active profile so they have your model and keys, then given their role (`SOUL.md`; the cloned one is kept as `SOUL.md.pre-harness`) | `harness setup` |
-| Guard plugin | Hermes plugin `harness`, enabled in `harness-coder`: blocks writes to frozen and protected files, pushes and the like; blocks everything if the engine is missing | `harness setup` |
-| Project files | AGENTS.md, compose.yaml, verify/holdout scripts, `.harness/config.json` | `harness init` in each project repo |
+| Engine | `factory` and `factory-hook` on PATH (Python stdlib only) | `uv tool install` / `pipx install` |
+| Skills | `factory`, `factory-worker` in your Hermes skill index | `factory setup` |
+| Profiles | `factory-coder` (Hermes as a coding engine) and `factory-worker` (kanban operator), cloned from your active profile so they have your model and keys, then given their role (`SOUL.md`; the cloned one is kept as `SOUL.md.pre-factory`) | `factory setup` |
+| Guard plugin | Hermes plugin `factory`, enabled in `factory-coder`: blocks writes to frozen and protected files, pushes and the like; blocks everything if the engine is missing | `factory setup` |
+| Project files | AGENTS.md, compose.yaml, verify/holdout scripts, `.factory/config.json` | `factory init` in each project repo |
 
 Your default profile's config is not modified; it only receives the two skills.
 
 Other ways in:
 
 - **Plugin only** (engine already installed; you manage the profile yourself):
-  `hermes -p harness-coder plugins install theRealMarkCastillo/hermes-harness/hermes/plugin --enable`.
-  The guard acts only in a profile named `harness-coder`; enabled anywhere else it does nothing.
+  `hermes -p factory-coder plugins install eidolonlabs-ai/hermes-factory/hermes/plugin --enable`.
+  The guard acts only in a profile named `factory-coder`; enabled anywhere else it does nothing.
 - **From a checkout** (to hack on it): `git clone` then `./install.sh` for an editable install.
-- **Without Hermes:** the engine alone drives `claude` and `codex`; `harness setup` skips what
+- **Without Hermes:** the engine alone drives `claude` and `codex`; `factory setup` skips what
   it cannot find.
 
-Update: `uv tool upgrade hermes-agent-harness && harness setup`. Remove:
-`uv tool uninstall hermes-agent-harness`, `hermes profile delete harness-coder` (and
-`harness-worker`), and delete `~/.hermes/skills/software-factory/harness*`.
+Update: `uv tool upgrade hermes-agent-factory && factory setup`. Remove:
+`uv tool uninstall hermes-agent-factory`, `hermes profile delete factory-coder` (and
+`factory-worker`), and delete `~/.hermes/skills/software-factory/factory*`.
 
 ## Use
 
 In a Hermes chat:
 
-> Build the app in `inputs/HANDOFF.md` in `~/code/myapp` with the harness. Ping me at checkpoints.
+> Build the app in `inputs/HANDOFF.md` in `~/code/myapp` with the factory. Ping me at checkpoints.
 
-Hermes follows the `harness` skill: `harness init` (adds AGENTS.md, compose.yaml, verify.sh
-skeletons), read-only intake, your answers, M0, your plan approval, then `harness pipeline` in
+Hermes follows the `factory` skill: `factory init` (adds AGENTS.md, compose.yaml, verify.sh
+skeletons), read-only intake, your answers, M0, your plan approval, then `factory pipeline` in
 the background. It messages you at checkpoints, red gates and the end.
 
 Or drive it yourself:
 
 ```bash
-cd ~/code/myapp && git init -b main && harness init
+cd ~/code/myapp && git init -b main && factory init
 $EDITOR inputs/HANDOFF.md
-harness intake inputs/HANDOFF.md --engine codex      # questions for you (read-only)
-harness run --milestone M0 --role build --engine claude --review-engine codex
-harness freeze                                        # after you approve .harness/plan.json
-harness pipeline                                      # M1..Mn until a checkpoint / red / budget
-harness status
-harness preview                                       # app with published ports; --down to stop
+factory intake inputs/HANDOFF.md --engine codex      # questions for you (read-only)
+factory run --milestone M0 --role build --engine claude --review-engine codex
+factory freeze                                        # after you approve .factory/plan.json
+factory pipeline                                      # M1..Mn until a checkpoint / red / budget
+factory status
+factory preview                                       # app with published ports; --down to stop
 ```
 
 For overnight runs or phone intake, use kanban mode: one card per milestone for the
-`harness-worker` profile (see `hermes/plugin/skills/harness-worker`).
+`factory-worker` profile (see `hermes/plugin/skills/factory-worker`).
 
 ## What's where
 
 | Path | |
 |---|---|
-| `harness/` | the CLI (Python stdlib only): gate, runner, pipeline, guard, compose policy, audit-diff |
-| `template/` | files `harness init` adds to a project |
+| `factory/` | the CLI (Python stdlib only): gate, runner, pipeline, guard, compose policy, audit-diff |
+| `template/` | files `factory init` adds to a project |
 | `hermes/plugin/` | Hermes plugin: guard and verify hooks, the two skills |
-| `profiles/` | the Hermes profiles `harness setup` creates |
+| `profiles/` | the Hermes profiles `factory setup` creates |
 | `contract/` | shared guard test vectors and JSON schemas |
-| `CONTRACT.md` | rules shared with the sibling harnesses |
+| `CONTRACT.md` | rules shared with the sibling factoryes |
 | `DESIGN.md` | architecture and decisions |
 | `examples/chronograph/` | intake + build benchmarks with results |
 | `tests/` | `python3 -m unittest discover -s tests` (fake engines + a real compose stack) |

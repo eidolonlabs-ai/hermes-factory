@@ -7,8 +7,8 @@ import unittest
 import zipfile
 
 from core_support import CONFIG, PLAN, ROOT, CoreCase, git
-from harness import engines, holdout, models, state
-from harness.models import ConfigError
+from factory import engines, holdout, models, state
+from factory.models import ConfigError
 
 GOOD = """pathlib.Path('src').mkdir(exist_ok=True); pathlib.Path('src/feature.txt').write_text('ok')"""
 
@@ -102,14 +102,14 @@ class EngineTests(CoreCase):
         self.assertIn("--strict-mcp-config", a)
         self.assertEqual(a[a.index("--mcp-config") + 1], '{"mcpServers":{}}')
         self.assertEqual(inv.env["ENABLE_CLAUDEAI_MCP_SERVERS"], "false")
-        self.assertEqual(inv.env["HARNESS_ROOT"], str(self.tmp))
-        self.assertTrue(os.path.isfile(inv.env["HARNESS_FROZEN_FILE"]))
+        self.assertEqual(inv.env["FACTORY_ROOT"], str(self.tmp))
+        self.assertTrue(os.path.isfile(inv.env["FACTORY_FROZEN_FILE"]))
         # the in-engine guard must be able to read the frozen file (else it fails closed)
-        from harness import hooks_adapters
+        from factory import hooks_adapters
         self.assertIsInstance(hooks_adapters._frozen(str(self.tmp), inv.env), list)
         settings = json.loads(__import__("pathlib").Path(a[a.index("--settings") + 1]).read_text())
         self.assertEqual(settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
-                         f"{sys.executable} -m harness.hooks_adapters claude")
+                         f"{sys.executable} -m factory.hooks_adapters claude")
         self.assertEqual(inv.stdin_text, "P")
 
     def test_claude_hook_end_to_end_with_invocation_env(self):
@@ -138,7 +138,7 @@ class EngineTests(CoreCase):
         kw = dict(role="build", worktree=self.tmp, prompt="P", prompt_file=d / "p.md", run_dir=d,
                   cfg=cfg, frozen=[])
         self.assertEqual(engines.build_invocation("hermes", **kw).argv,
-                         ["hermes", "-p", "harness-coder", "-z", "P", "--yolo", "--accept-hooks"])
+                         ["hermes", "-p", "factory-coder", "-z", "P", "--yolo", "--accept-hooks"])
         self.assertEqual(engines.build_invocation("agy", **kw).argv,
                          ["agy", "-p", "P", "--dangerously-skip-permissions"])
         c = engines.build_invocation("codex", **kw).argv
@@ -168,31 +168,31 @@ class IntakeTests(CoreCase):
         return p
 
     def intake(self, body, **kw):
-        from harness.intake import run_intake
+        from factory.intake import run_intake
         self.fake(body)
         return run_intake(self.src(**kw), "fake")
 
     def test_needs_clarification_is_success(self):
-        r = self.intake(f"pathlib.Path(os.environ['HARNESS_LAST_MESSAGE']).write_text({json.dumps(json.dumps(INTAKE_OK))!s})")
+        r = self.intake(f"pathlib.Path(os.environ['FACTORY_LAST_MESSAGE']).write_text({json.dumps(json.dumps(INTAKE_OK))!s})")
         self.assertEqual(r["status"], "needs_clarification", r.get("reason"))
         self.assertEqual(r["report"]["questions"][0]["id"], "Q1")
         self.assertTrue(os.path.exists(os.path.join(r["run_dir"], "result.json")))
 
     def test_read_only_mutation_rejected(self):
-        body = (f"pathlib.Path(os.environ['HARNESS_LAST_MESSAGE']).write_text({json.dumps(json.dumps(INTAKE_OK))})\n"
+        body = (f"pathlib.Path(os.environ['FACTORY_LAST_MESSAGE']).write_text({json.dumps(json.dumps(INTAKE_OK))})\n"
                 "pathlib.Path('impl.py').write_text('x = 1')")
         r = self.intake(body)
         self.assertEqual(r["status"], "failed")
         self.assertIn("read-only", r["reason"])
 
     def test_source_modification_rejected(self):
-        body = (f"pathlib.Path(os.environ['HARNESS_LAST_MESSAGE']).write_text({json.dumps(json.dumps(INTAKE_OK))})\n"
+        body = (f"pathlib.Path(os.environ['FACTORY_LAST_MESSAGE']).write_text({json.dumps(json.dumps(INTAKE_OK))})\n"
                 "pathlib.Path('intake.txt').write_text('changed')")
         self.assertEqual(self.intake(body)["status"], "failed")
 
     def test_contradictory_report_rejected(self):
         bad = dict(INTAKE_OK, decision="ready_for_planning")
-        r = self.intake(f"pathlib.Path(os.environ['HARNESS_LAST_MESSAGE']).write_text({json.dumps(json.dumps(bad))})")
+        r = self.intake(f"pathlib.Path(os.environ['FACTORY_LAST_MESSAGE']).write_text({json.dumps(json.dumps(bad))})")
         self.assertEqual(r["status"], "failed")
         self.assertIn("contradicts", r["reason"])
 
@@ -200,20 +200,20 @@ class IntakeTests(CoreCase):
         p = self.tmp / "s.docx"
         with zipfile.ZipFile(p, "w") as z:
             z.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello docx</w:t></w:r></w:p></w:body></w:document>')
-        from harness.intake import extract_source
+        from factory.intake import extract_source
         self.assertEqual(extract_source(p), "Hello docx")
         with self.assertRaises(ValueError):
             extract_source(self.tmp / "a.pdf")
 
     def test_hermes_has_no_read_only_mode(self):
-        from harness.intake import run_intake
+        from factory.intake import run_intake
         r = run_intake(self.src(), "hermes")
         self.assertEqual(r["status"], "failed")
 
 
 def cli(*args, env=None, cwd=None):
     e = {**os.environ, "PYTHONPATH": str(ROOT), **(env or {})}
-    p = subprocess.run([sys.executable, "-m", "harness", *args], capture_output=True, text=True,
+    p = subprocess.run([sys.executable, "-m", "factory", *args], capture_output=True, text=True,
                        env=e, cwd=cwd or str(ROOT))
     return p
 
@@ -241,7 +241,7 @@ class CliTests(CoreCase):
     def test_detached_run_then_wait(self):
         self.make_repo()
         self.fake(GOOD)
-        env = {"HARNESS_HOME": os.environ["HARNESS_HOME"], "HARNESS_FAKE_ENGINE": os.environ["HARNESS_FAKE_ENGINE"],
+        env = {"FACTORY_HOME": os.environ["FACTORY_HOME"], "FACTORY_FAKE_ENGINE": os.environ["FACTORY_FAKE_ENGINE"],
                **{k: v for k, v in os.environ.items() if k.startswith("GIT_")}}
         r = cli("run", "--milestone", "M1", "--role", "build", "--engine", "fake", "--detach",
                 "--repo", str(self.repo), env=env)
@@ -254,7 +254,7 @@ class CliTests(CoreCase):
     def test_foreground_run_fail_exit_1_and_gate_cmd(self):
         self.make_repo()
         self.fake("pass")
-        env = {"HARNESS_HOME": os.environ["HARNESS_HOME"], "HARNESS_FAKE_ENGINE": os.environ["HARNESS_FAKE_ENGINE"]}
+        env = {"FACTORY_HOME": os.environ["FACTORY_HOME"], "FACTORY_FAKE_ENGINE": os.environ["FACTORY_FAKE_ENGINE"]}
         r = cli("run", "--milestone", "M1", "--role", "build", "--engine", "fake", "--attempts", "1",
                 "--repo", str(self.repo), env=env)
         self.assertEqual(r.returncode, 1, r.stdout)
@@ -270,11 +270,11 @@ class CliTests(CoreCase):
         subprocess.run(["git", "init", "-q", "-b", "main", str(r)], check=True)
         (r / "README.md").write_text("x")
         git(r, "add", "-A"); git(r, "commit", "-q", "-m", "i")
-        env = {"HARNESS_HOME": os.environ["HARNESS_HOME"], **{k: v for k, v in os.environ.items() if k.startswith("GIT_")}}
+        env = {"FACTORY_HOME": os.environ["FACTORY_HOME"], **{k: v for k, v in os.environ.items() if k.startswith("GIT_")}}
         self.assertEqual(cli("init", "--project", "p1", "--stack", "host", "--reason", "x", "--repo", str(r), env=env).returncode, 0)
         self.assertEqual(cli("init", "--project", "p2", "--stack", "host", "--repo", str(self.tmp), env=env).returncode, 2)  # reason required
         self.assertEqual(git(r, "status", "--porcelain"), "")  # config committed
-        (r / ".harness/plan.json").write_text(json.dumps(PLAN))
+        (r / ".factory/plan.json").write_text(json.dumps(PLAN))
         git(r, "add", "-A"); git(r, "commit", "-q", "-m", "plan")
         a = cli("plan", "add", "M7", "--goal", "fix stuff", "--verify-as", "M2", "--repo", str(r), env=env)
         self.assertEqual(a.returncode, 0, a.stderr)
@@ -285,13 +285,13 @@ class CliTests(CoreCase):
         self.assertEqual(s["extra_milestones"], ["M7"])
 
     def test_doctor_runs(self):
-        r = cli("doctor", env={"HARNESS_HOME": str(self.tmp / "h")})
+        r = cli("doctor", env={"FACTORY_HOME": str(self.tmp / "h")})
         self.assertIn(r.returncode, (0, 1))
         self.assertIn("checks", json.loads(r.stdout))
 
     def test_freeze_cli_twice_rejected(self):
         self.make_repo(freeze=False, holdout=True)
-        env = {"HARNESS_HOME": os.environ["HARNESS_HOME"], **{k: v for k, v in os.environ.items() if k.startswith("GIT_")}}
+        env = {"FACTORY_HOME": os.environ["FACTORY_HOME"], **{k: v for k, v in os.environ.items() if k.startswith("GIT_")}}
         self.assertEqual(cli("freeze", "--repo", str(self.repo), env=env).returncode, 0)
         self.assertEqual(cli("freeze", "--repo", str(self.repo), env=env).returncode, 2)
         s = state.load_state("demo")
@@ -301,7 +301,7 @@ class CliTests(CoreCase):
 
 class PipelineTests(CoreCase):
     def test_pipeline_stops_at_checkpoint_then_resumes(self):
-        from harness.pipeline import run_pipeline
+        from factory.pipeline import run_pipeline
         self.make_repo()
         self.fake(GOOD)
         s = run_pipeline("demo")
@@ -314,7 +314,7 @@ class PipelineTests(CoreCase):
         self.assertEqual([m["milestone"] for m in s2["milestones"]], ["M3"])
 
     def test_pipeline_stops_on_red(self):
-        from harness.pipeline import run_pipeline
+        from factory.pipeline import run_pipeline
         self.make_repo()
         self.fake("pass")
         s = run_pipeline("demo")
@@ -323,21 +323,21 @@ class PipelineTests(CoreCase):
         self.assertEqual(len(s["milestones"]), 1)
 
     def test_pipeline_next_and_unfrozen_and_missing_engine(self):
-        from harness.pipeline import run_pipeline
+        from factory.pipeline import run_pipeline
         self.make_repo()
         self.fake(GOOD)
         s = run_pipeline("demo", next_only=True)
         self.assertEqual((s["status"], len(s["milestones"])), ("stopped", 1))
-        os.environ.pop("HARNESS_FAKE_ENGINE")
+        os.environ.pop("FACTORY_FAKE_ENGINE")
         self.assertEqual(run_pipeline("demo")["status"], "engine_unavailable")
 
     def test_pipeline_not_frozen(self):
-        from harness.pipeline import run_pipeline
+        from factory.pipeline import run_pipeline
         self.make_repo(freeze=False)
         self.assertEqual(run_pipeline("demo")["status"], "not_frozen")
 
     def test_pipeline_runs_follow_up_milestone(self):
-        from harness.pipeline import run_pipeline
+        from factory.pipeline import run_pipeline
         self.make_repo()
         self.fake(GOOD)
         run_pipeline("demo"); run_pipeline("demo")

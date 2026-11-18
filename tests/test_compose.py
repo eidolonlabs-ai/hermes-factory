@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from harness import compose as C
+from factory import compose as C
 
 DOCKER_OK, DOCKER_WHY = C.docker_available()
 CLEAN = {"name": "p-12345678", "services": {"test": {"image": "busybox", "volumes": [

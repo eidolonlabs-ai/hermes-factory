@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from harness import guard, hooks_adapters
-from harness.types import GuardContext
+from factory import guard, hooks_adapters
+from factory.types import GuardContext
 
 CASES = json.loads((Path(__file__).resolve().parent.parent / "contract" / "guard-cases.json").read_text())
 CTX = GuardContext(**CASES["context"])
@@ -70,7 +70,7 @@ class TestAdapters(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = self.tmp.name
-        self.env = {"HARNESS_ROOT": self.root}
+        self.env = {"FACTORY_ROOT": self.root}
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -95,20 +95,20 @@ class TestAdapters(unittest.TestCase):
         self.assertEqual(out["action"], "block")
         self.assertTrue(out["message"].startswith("needs human approval"))
         out, code = self.hermes("terminal", {"command": "git reset --hard"},
-                                {**self.env, "HARNESS_UNATTENDED": "0"})
+                                {**self.env, "FACTORY_UNATTENDED": "0"})
         self.assertEqual((out["action"], code), ("approve", 0))
 
     def test_hermes_allow(self):
         self.assertEqual(self.hermes("write_file", {"path": "src/a.py"}), ({}, 0))
 
     def test_hermes_frozen_from_file(self):
-        Path(self.root, ".harness").mkdir()
-        Path(self.root, ".harness", "frozen.json").write_text('["tests/t.py"]')
+        Path(self.root, ".factory").mkdir()
+        Path(self.root, ".factory", "frozen.json").write_text('["tests/t.py"]')
         out, _ = self.hermes("write_file", {"path": "tests/t.py"})
         self.assertEqual(out["action"], "block")
         ff = Path(self.root, "alt.json")
         ff.write_text('["x.txt"]')
-        out, _ = self.hermes("write_file", {"path": "x.txt"}, {**self.env, "HARNESS_FROZEN_FILE": str(ff)})
+        out, _ = self.hermes("write_file", {"path": "x.txt"}, {**self.env, "FACTORY_FROZEN_FILE": str(ff)})
         self.assertEqual(out["action"], "block")
 
     def test_hermes_malformed(self):
@@ -125,7 +125,7 @@ class TestAdapters(unittest.TestCase):
     def test_claude_ask(self):
         out, code = self.claude("Bash", {"command": "git clean -fdx"})
         self.assertEqual(code, 2)
-        out, code = self.claude("Bash", {"command": "git clean -fdx"}, {**self.env, "HARNESS_UNATTENDED": "0"})
+        out, code = self.claude("Bash", {"command": "git clean -fdx"}, {**self.env, "FACTORY_UNATTENDED": "0"})
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out)["hookSpecificOutput"]["permissionDecision"], "ask")
 
@@ -144,35 +144,35 @@ if __name__ == "__main__":
 
 
 class ContractPhaseTests(unittest.TestCase):
-    """M0 must be able to write .harness/plan.json and tests/holdout/ (found in a live run)."""
+    """M0 must be able to write .factory/plan.json and tests/holdout/ (found in a live run)."""
 
     def test_m0_allows_plan_and_holdouts_but_not_config(self):
-        from harness.types import GuardContext
-        from harness import guard
+        from factory.types import GuardContext
+        from factory import guard
         m0 = GuardContext(root="/repo", contract_phase=True)
         later = GuardContext(root="/repo")
-        self.assertEqual(guard.check_write(".harness/plan.json", m0).decision, "allow")
+        self.assertEqual(guard.check_write(".factory/plan.json", m0).decision, "allow")
         self.assertEqual(guard.check_write("tests/holdout/test_x.py", m0).decision, "allow")
         self.assertEqual(guard.check_shell("mkdir -p tests/holdout && echo x > tests/holdout/a.py", m0).decision, "allow")
-        self.assertEqual(guard.check_write(".harness/config.json", m0).decision, "deny")
-        self.assertEqual(guard.check_write(".harness/plan.json", later).decision, "deny")
+        self.assertEqual(guard.check_write(".factory/config.json", m0).decision, "deny")
+        self.assertEqual(guard.check_write(".factory/plan.json", later).decision, "deny")
         self.assertEqual(guard.check_write("tests/holdout/test_x.py", later).decision, "deny")
 
     def test_adapter_sets_contract_phase_from_milestone(self):
         import json
-        from harness import hooks_adapters
-        raw = json.dumps({"tool_name": "Write", "tool_input": {"file_path": "/repo/.harness/plan.json"}, "cwd": "/repo"})
-        _, rc = hooks_adapters.claude_pre_tool_use(raw, {"HARNESS_ROOT": "/repo", "HARNESS_MILESTONE": "M0"})
+        from factory import hooks_adapters
+        raw = json.dumps({"tool_name": "Write", "tool_input": {"file_path": "/repo/.factory/plan.json"}, "cwd": "/repo"})
+        _, rc = hooks_adapters.claude_pre_tool_use(raw, {"FACTORY_ROOT": "/repo", "FACTORY_MILESTONE": "M0"})
         self.assertEqual(rc, 0)
-        _, rc = hooks_adapters.claude_pre_tool_use(raw, {"HARNESS_ROOT": "/repo", "HARNESS_MILESTONE": "M1"})
+        _, rc = hooks_adapters.claude_pre_tool_use(raw, {"FACTORY_ROOT": "/repo", "FACTORY_MILESTONE": "M1"})
         self.assertEqual(rc, 2)
 
 
 class FrozenDirectoryTests(unittest.TestCase):
     def test_frozen_dir_blocks_existing_allows_new(self):
         import tempfile, os
-        from harness.types import GuardContext
-        from harness import guard
+        from factory.types import GuardContext
+        from factory import guard
         root = tempfile.mkdtemp()
         os.makedirs(os.path.join(root, "tests"))
         open(os.path.join(root, "tests", "test_old.py"), "w").close()

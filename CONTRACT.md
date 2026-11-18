@@ -1,7 +1,7 @@
-# Harness contract (shared)
+# Factory contract (shared)
 
-The rules every harness in this family follows, whatever the platform: `hermes-agent-harness`,
-`codex-harness-template`, `agy-software-factory`, and future siblings. Each repo implements
+The rules every factory in this family follows, whatever the platform: `hermes-agent-factory`,
+`codex-factory-template`, `agy-software-factory`, and future siblings. Each repo implements
 them natively, in its own language and with its own platform features. This file and the
 `contract/` folder are copied between repos. When a rule changes, change it everywhere.
 
@@ -14,7 +14,7 @@ code being merged. The agent's own report ("completed", "all tests pass") is nev
 
 ## 2. The gate
 
-Run by the harness, outside the agent's session, on the candidate worktree. Steps, first
+Run by the factory, outside the agent's session, on the candidate worktree. Steps, first
 failure stops:
 
 | # | Step | Fails when |
@@ -63,10 +63,10 @@ browser E2E tests (Playwright) against the live UI, and tears the stack down aft
 
 ## 6. Freeze and holdouts
 
-- **Freeze** happens once, at checkpoint 1, after a human approves the plan. The harness
+- **Freeze** happens once, at checkpoint 1, after a human approves the plan. The factory
   records the commit and the list of frozen files. Builders may **add** tests; they may not
   change or delete frozen ones.
-- **Holdouts** are tests written in M0 and removed from the repository at freeze. The harness
+- **Holdouts** are tests written in M0 and removed from the repository at freeze. The factory
   copies them in only while gating and removes them afterwards. Builders and reviewers see
   only failing test ids and assertion messages, never holdout source.
 - Holdouts are a discipline, not a secret: in permission-bypass modes an agent can read any
@@ -90,7 +90,7 @@ those cases against its own guard in CI.
 
 - **Deny:** writes to `.env*` (except `.env.example`, `.env.sample`, `.env.template`,
   `.env.test`), private keys (`id_rsa`, `id_ed25519`, `id_ecdsa`, `id_dsa`, `*.pem`, `*.key`),
-  `.git/` internals, the harness control directory, holdout files, and frozen files.
+  `.git/` internals, the factory control directory, holdout files, and frozen files.
   Destructive commands (`rm -rf /` or `~`, `mkfs`, fork bombs), `git push`, `--no-verify`,
   host-wide Docker prune, pipe-to-shell installs.
 - **Ask** (deny when unattended): `git reset --hard`, `git clean -f…`, interactive rebase.
@@ -104,7 +104,7 @@ those cases against its own guard in CI.
 - Run state lives **outside** the project repository, so agents cannot edit the record of
   their own runs.
 - Each run writes one `result.json` atomically (see `contract/result.schema.json`).
-- Human interventions are counted, so different harnesses can be compared fairly.
+- Human interventions are counted, so different factoryes can be compared fairly.
 
 ## 10. Benchmarks
 

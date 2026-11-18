@@ -28,14 +28,14 @@ jobs:
         run: |
           pip install .
           cd "$(mktemp -d)"
-          harness --version
+          factory --version
           git init -q -b main proj && cd proj
-          harness init --no-commit
-          test -f AGENTS.md && test -f scripts/verify.sh && test -f .harness/config.json
-          echo '{"tool_name":"terminal","tool_input":{"command":"git push"},"cwd":"."}' | harness-hook hermes | grep -q '"block"'
-          HERMES_HOME="$PWD/.hh" harness setup --no-profiles
-          test -f .hh/skills/software-factory/harness/SKILL.md
-          test -f .hh/skills/software-factory/harness/templates/audit/run.sh
+          factory init --no-commit
+          test -f AGENTS.md && test -f scripts/verify.sh && test -f .factory/config.json
+          echo '{"tool_name":"terminal","tool_input":{"command":"git push"},"cwd":"."}' | factory-hook hermes | grep -q '"block"'
+          HERMES_HOME="$PWD/.hh" factory setup --no-profiles
+          test -f .hh/skills/software-factory/factory/SKILL.md
+          test -f .hh/skills/software-factory/factory/templates/audit/run.sh
   macos:
     runs-on: macos-latest
     steps:

@@ -4,7 +4,7 @@
 #   scripts/verify.sh <M1|M2|...>
 #
 # Cumulative: verifying Mk runs every check for M1..Mk against a fresh real stack.
-# The harness sets COMPOSE_PROJECT_NAME (unique per run) and HARNESS_ARTIFACTS (log dir)
+# The factory sets COMPOSE_PROJECT_NAME (unique per run) and FACTORY_ARTIFACTS (log dir)
 # and tears the stack down afterwards. Run by hand, it uses a local project name.
 # Exit 0 only if every check for the level ran and passed (NOT_RUN is a failure).
 set -euo pipefail
@@ -15,7 +15,7 @@ MILESTONE="$1"; LEVEL="${BASH_REMATCH[1]}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-$(basename "$ROOT" | tr -cs 'a-z0-9' '-')-local}"
-ART="${HARNESS_ARTIFACTS:-/tmp/${COMPOSE_PROJECT_NAME}-verify}"
+ART="${FACTORY_ARTIFACTS:-/tmp/${COMPOSE_PROJECT_NAME}-verify}"
 mkdir -p "$ART"
 
 # dc: app services only (what `up` starts). dct: includes the "test" profile (test runners).

@@ -10,18 +10,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from harness import guard, hooks_adapters  # noqa: E402
-from harness.types import GuardContext  # noqa: E402
+from factory import guard, hooks_adapters  # noqa: E402
+from factory.types import GuardContext  # noqa: E402
 
 
 class HermesHookEnvTests(unittest.TestCase):
-    """Hermes runs shell hooks from the profile home with a scrubbed env: no HARNESS_* vars,
+    """Hermes runs shell hooks from the profile home with a scrubbed env: no FACTORY_* vars,
     cwd = ~/.hermes. The adapter must still find the active run(s)."""
 
     def setUp(self):
         self.home = Path(tempfile.mkdtemp(prefix="hh-home-")).resolve()
-        self.old = os.environ.get("HARNESS_HOME")
-        os.environ["HARNESS_HOME"] = str(self.home)
+        self.old = os.environ.get("FACTORY_HOME")
+        os.environ["FACTORY_HOME"] = str(self.home)
         self.wt = self.home / "worktrees" / "p" / "r1"
         (self.wt / "scripts").mkdir(parents=True)
         run = self.home / "runs" / "p" / "r1"
@@ -31,9 +31,9 @@ class HermesHookEnvTests(unittest.TestCase):
 
     def tearDown(self):
         if self.old is None:
-            os.environ.pop("HARNESS_HOME", None)
+            os.environ.pop("FACTORY_HOME", None)
         else:
-            os.environ["HARNESS_HOME"] = self.old
+            os.environ["FACTORY_HOME"] = self.old
         subprocess.run(["rm", "-rf", str(self.home)])
 
     def payload(self, cwd, cmd="echo x > scripts/verify.sh"):

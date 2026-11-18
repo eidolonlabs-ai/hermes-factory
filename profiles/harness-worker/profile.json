@@ -1,4 +1,0 @@
-{
-  "description": "Kanban operator for hermes-agent-harness cards; never edits code.",
-  "plugin": false
-}

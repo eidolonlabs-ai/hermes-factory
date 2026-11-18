@@ -1,8 +1,8 @@
 # Compose stack for this project. The M0 architect replaces the example services.
 #
-# Rules (enforced by `harness gate`, see AGENTS.md):
+# Rules (enforced by `factory gate`, see AGENTS.md):
 #   - no container_name, no published ports, no docker socket, no privileged, no bind mounts
-#     outside the repo; the harness sets COMPOSE_PROJECT_NAME per run.
+#     outside the repo; the factory sets COMPOSE_PROJECT_NAME per run.
 #   - every long-running service has a healthcheck so `up --wait` means "ready".
 #   - tests run inside the `test` and `e2e` services (profile "test"), against live services.
 
@@ -12,7 +12,7 @@ services:
     environment:
       POSTGRES_DB: app
       POSTGRES_USER: app
-      POSTGRES_PASSWORD: app_dev_password   # harness-audit-ignore (local-only dev credential)
+      POSTGRES_PASSWORD: app_dev_password   # factory-audit-ignore (local-only dev credential)
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U app -d app"]
       interval: 3s
@@ -22,7 +22,7 @@ services:
   # api:
   #   build: ./api
   #   environment:
-  #     DATABASE_URL: postgresql://app:app_dev_password@db:5432/app   # harness-audit-ignore
+  #     DATABASE_URL: postgresql://app:app_dev_password@db:5432/app   # factory-audit-ignore
   #   depends_on: {db: {condition: service_healthy}}
   #   healthcheck: {test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"], interval: 3s, retries: 30}
 
@@ -41,7 +41,7 @@ services:
     depends_on:
       db: {condition: service_healthy}
     environment:
-      DATABASE_URL: postgresql://app:app_dev_password@db:5432/app   # harness-audit-ignore
+      DATABASE_URL: postgresql://app:app_dev_password@db:5432/app   # factory-audit-ignore
     command: ["python", "-c", "raise SystemExit('test service not configured yet: M0 replaces it')"]
 
   # e2e:

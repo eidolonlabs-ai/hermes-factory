@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs the holdout tests for a milestone. Written in M0, FROZEN at checkpoint 1.
-# The harness copies holdouts into tests/holdout/ just before calling this, and removes them
+# The factory copies holdouts into tests/holdout/ just before calling this, and removes them
 # afterwards; the stack is already up (same COMPOSE_PROJECT_NAME as verify.sh).
 #
 #   scripts/holdout.sh <M1|M2|...>

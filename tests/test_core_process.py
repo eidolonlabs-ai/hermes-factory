@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from core_support import CoreCase
-from harness.process import run_process
+from factory.process import run_process
 
 
 class ProcessTests(CoreCase):

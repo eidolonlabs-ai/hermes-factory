@@ -9,7 +9,7 @@ import unittest
 
 from core_support import CONFIG, PLAN, CoreCase, git
 
-from harness import compose
+from factory import compose
 
 COMPOSE = """
 services:
@@ -31,7 +31,7 @@ VERIFY = """#!/bin/sh
 set -e
 test -f src/feature.txt
 dc() { docker compose -p "$COMPOSE_PROJECT_NAME" -f compose.yaml "$@"; }
-dc up -d --wait --wait-timeout 120 >"$HARNESS_ARTIFACTS/up.log" 2>&1
+dc up -d --wait --wait-timeout 120 >"$FACTORY_ARTIFACTS/up.log" 2>&1
 dc --profile test run --rm -T test psql -h db -U postgres -tAc 'select 41+1' | grep -q 42
 """
 HOLDOUT = """#!/bin/sh
@@ -53,7 +53,7 @@ class ComposeGateTest(CoreCase):
         (r / "scripts/holdout.sh").write_text(HOLDOUT)
         git(r, "add", "-A")
         git(r, "commit", "-q", "-m", "compose stack")
-        from harness import holdout
+        from factory import holdout
         holdout.freeze(r, "demo")
         return r
 

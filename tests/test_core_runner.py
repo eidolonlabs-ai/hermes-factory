@@ -6,7 +6,7 @@ import sys
 import unittest
 
 from core_support import CoreCase, ROOT, git
-from harness import state, workspace
+from factory import state, workspace
 
 GOOD = """pathlib.Path('src').mkdir(exist_ok=True); pathlib.Path('src/feature.txt').write_text('ok')"""
 
@@ -97,7 +97,7 @@ class RunnerTests(CoreCase):
         self.make_repo(plan=plan)
         self.fake(GOOD + """
 import json
-frozen = json.load(open(os.environ['HARNESS_FROZEN_FILE']))
+frozen = json.load(open(os.environ['FACTORY_FROZEN_FILE']))
 pathlib.Path('src/frozen_seen.txt').write_text(json.dumps(sorted(frozen)))
 """)
         res = self.run_ms(attempts=1)
@@ -161,7 +161,7 @@ pathlib.Path('src/frozen_seen.txt').write_text(json.dumps(sorted(frozen)))
         self.assertEqual(check(res, "verify")["status"], "NOT_RUN")
 
     def test_not_run_verify_fails_even_when_other_checks_pass(self):
-        from harness import gate, models
+        from factory import gate, models
         cfg = models.validate_config({**__import__("core_support").CONFIG})
         self.make_repo()
         git(self.repo, "rm", "-q", "scripts/verify.sh")
@@ -253,7 +253,7 @@ pathlib.Path('src/frozen_seen.txt').write_text(json.dumps(sorted(frozen)))
         self.assertTrue(res["passed"])
         self.assertFalse(res["merged"])
         self.assertFalse((self.repo / "src/feature.txt").exists())
-        self.assertIn(res["branch"], git(self.repo, "branch", "--list", "harness/*"))
+        self.assertIn(res["branch"], git(self.repo, "branch", "--list", "factory/*"))
 
     def test_unfrozen_project_rejects_non_m0(self):
         self.make_repo(freeze=False)
@@ -271,7 +271,7 @@ pathlib.Path('src/frozen_seen.txt').write_text(json.dumps(sorted(frozen)))
 
     def test_extra_milestone_verify_as(self):
         self.make_repo()
-        from harness import state as st
+        from factory import state as st
         st.update_state("demo", lambda s: s["extra_milestones"].update(
             {"M9": {"id": "M9", "title": "fix", "goal": "g", "acceptance": ["a"],
                     "allowed_paths": ["src/"], "verify_as": "M1"}}))

@@ -3,7 +3,7 @@ import os
 import tempfile
 import unittest
 
-from harness.detect import detect_project
+from factory.detect import detect_project
 
 
 def write(root, rel, text=""):

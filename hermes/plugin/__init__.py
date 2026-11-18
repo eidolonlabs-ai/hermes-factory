@@ -1,25 +1,25 @@
-"""Hermes plugin for hermes-agent-harness.
+"""Hermes plugin for hermes-agent-factory.
 
 Thin on purpose: it never imports the engine. The guard decision is made by the
-`harness-hook` executable (the same adapter the Claude Code hook uses), so this folder can be
+`factory-hook` executable (the same adapter the Claude Code hook uses), so this folder can be
 installed on its own (`hermes plugins install owner/repo/hermes/plugin`) and the engine can be
 upgraded independently.
 
 Registers:
   pre_tool_call  guard; blocks on deny, on any error, and when the engine is missing
   pre_verify     one nudge per turn to run the milestone's verify script before finishing
-  skills         harness:harness, harness:harness-worker
+  skills         factory:factory, factory:factory-worker
 
-The guard is active in the `harness-coder` profile and in any session started by a harness run
-(HARNESS_ROOT / HARNESS_FROZEN_FILE in the environment). Elsewhere it does nothing, so
+The guard is active in the `factory-coder` profile and in any session started by a factory run
+(FACTORY_ROOT / FACTORY_FROZEN_FILE in the environment). Elsewhere it does nothing, so
 enabling the plugin in your everyday profile is safe.
 
 Hermes usually runs sessions inside one shared gateway process that serves every profile. So
 the profile is read per call from Hermes (`ctx.profile_name`), not from this process's
-environment, and the run a call belongs to is found by `harness-hook` through the registry of
-live runs (<HARNESS_HOME>/active/), not through HARNESS_* variables.
+environment, and the run a call belongs to is found by `factory-hook` through the registry of
+live runs (<FACTORY_HOME>/active/), not through FACTORY_* variables.
 
-Debug: `touch ~/.hermes/harness/hook-debug` appends one line per call to hook-debug.log.
+Debug: `touch ~/.hermes/factory/hook-debug` appends one line per call to hook-debug.log.
 """
 from __future__ import annotations
 
@@ -30,23 +30,23 @@ import subprocess
 from pathlib import Path
 
 _DIR = Path(__file__).parent
-GUARD_PROFILES = ("harness-coder",)
-_RUN_ENV = ("HARNESS_ROOT", "HARNESS_FROZEN_FILE")
+GUARD_PROFILES = ("factory-coder",)
+_RUN_ENV = ("FACTORY_ROOT", "FACTORY_FROZEN_FILE")
 _TIMEOUT_S = 15
 _INSTALL_HINT = ("install the engine: uv tool install "
-                 "git+https://github.com/theRealMarkCastillo/hermes-harness")
+                 "git+https://github.com/eidolonlabs-ai/hermes-factory")
 
 
 def _block(message: str) -> dict:
-    return {"action": "block", "message": f"harness guard: {message}"}
+    return {"action": "block", "message": f"factory guard: {message}"}
 
 
 _CTX = None  # set by register(); gives the profile of the turn being served
 
 
-def _harness_home(env) -> Path:
-    h = env.get("HARNESS_HOME")
-    return Path(h).expanduser() if h else Path.home() / ".hermes" / "harness"
+def _factory_home(env) -> Path:
+    h = env.get("FACTORY_HOME")
+    return Path(h).expanduser() if h else Path.home() / ".hermes" / "factory"
 
 
 def _profile_name(env) -> str:
@@ -65,7 +65,7 @@ def _profile_name(env) -> str:
 
 def guard_active(env=None) -> bool:
     env = os.environ if env is None else env
-    return (env.get("HARNESS_GUARD") == "1" or any(env.get(k) for k in _RUN_ENV)
+    return (env.get("FACTORY_GUARD") == "1" or any(env.get(k) for k in _RUN_ENV)
             or _profile_name(env) in GUARD_PROFILES)
 
 
@@ -73,7 +73,7 @@ def _live_runs(env) -> list[dict]:
     """Entries the runner wrote for live Hermes-engine runs (pid still alive)."""
     out = []
     try:
-        for f in sorted((_harness_home(env) / "active").glob("*.json")):
+        for f in sorted((_factory_home(env) / "active").glob("*.json")):
             try:
                 e = json.loads(f.read_text(encoding="utf-8"))
                 os.kill(int(e["pid"]), 0)
@@ -88,8 +88,8 @@ def _live_runs(env) -> list[dict]:
 def _milestone(env) -> str:
     """Milestone of the run this session belongs to: env, else the live run at the session cwd,
     else the only live run."""
-    if env.get("HARNESS_MILESTONE"):
-        return env["HARNESS_MILESTONE"]
+    if env.get("FACTORY_MILESTONE"):
+        return env["FACTORY_MILESTONE"]
     runs = _live_runs(env)
     try:
         cwd = os.path.realpath(_cwd())
@@ -103,7 +103,7 @@ def _milestone(env) -> str:
 
 def _debug(env, **fields) -> None:
     try:
-        home = _harness_home(env)
+        home = _factory_home(env)
         if (home / "hook-debug").exists():
             with open(home / "hook-debug.log", "a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"kind": "plugin", "pid": os.getpid(), **fields}, default=str) + "\n")
@@ -112,13 +112,13 @@ def _debug(env, **fields) -> None:
 
 
 def _hook_bin(env) -> str | None:
-    explicit = env.get("HARNESS_HOOK_BIN")
+    explicit = env.get("FACTORY_HOOK_BIN")
     if explicit:
         return explicit if os.access(explicit, os.X_OK) else None
-    found = shutil.which("harness-hook", path=env.get("PATH"))
+    found = shutil.which("factory-hook", path=env.get("PATH"))
     if found:
         return found
-    fallback = Path.home() / ".local" / "bin" / "harness-hook"
+    fallback = Path.home() / ".local" / "bin" / "factory-hook"
     return str(fallback) if os.access(fallback, os.X_OK) else None
 
 
@@ -140,19 +140,19 @@ def guard(tool_name: str = "", args: dict | None = None, **_kwargs):
             return None
         exe = _hook_bin(env)
         if not exe:
-            return _block(f"`harness-hook` not found on PATH; {_INSTALL_HINT}")
+            return _block(f"`factory-hook` not found on PATH; {_INSTALL_HINT}")
         payload = {"hook_event_name": "pre_tool_call", "tool_name": tool_name,
                    "tool_input": args if isinstance(args, dict) else {}, "cwd": _cwd()}
         proc = subprocess.run([exe, "hermes"], input=json.dumps(payload, default=str),
                               capture_output=True, text=True, timeout=_TIMEOUT_S, env=dict(env))
         if proc.returncode != 0:
-            return _block(f"harness-hook exited {proc.returncode}: {proc.stderr.strip()[-300:]}")
+            return _block(f"factory-hook exited {proc.returncode}: {proc.stderr.strip()[-300:]}")
         out = json.loads(proc.stdout.strip() or "{}")
         if not isinstance(out, dict):
-            return _block("harness-hook returned a non-object")
+            return _block("factory-hook returned a non-object")
         action = out.get("action")
         if action in ("block", "approve"):
-            return {"action": action, "message": str(out.get("message") or "blocked by harness guard")}
+            return {"action": action, "message": str(out.get("message") or "blocked by factory guard")}
         if action:
             return _block(f"unknown action {action!r}")
         return None
@@ -163,7 +163,7 @@ def guard(tool_name: str = "", args: dict | None = None, **_kwargs):
 
 
 def verify_nudge(coding: bool = True, attempt: int = 0, **_kwargs):
-    """pre_verify. Never runs the gate: the harness gate, outside the agent, is the authority."""
+    """pre_verify. Never runs the gate: the factory gate, outside the agent, is the authority."""
     try:
         env = os.environ
         if attempt or not coding or not guard_active(env):

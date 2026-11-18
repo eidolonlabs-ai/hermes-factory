@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 import unittest
 
-from harness.hygiene import check_hygiene
+from factory.hygiene import check_hygiene
 
 
 def sh(cwd, *args):

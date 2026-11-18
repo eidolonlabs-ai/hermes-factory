@@ -1,4 +1,4 @@
-"""Shared helpers for tests/test_core_*.py: temp git repos, fake engines, HARNESS_HOME."""
+"""Shared helpers for tests/test_core_*.py: temp git repos, fake engines, FACTORY_HOME."""
 import json
 import os
 import shutil
@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from harness import holdout, state  # noqa: E402
+from factory import holdout, state  # noqa: E402
 
 GIT_ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
            "GIT_COMMITTER_EMAIL": "t@t"}
@@ -38,7 +38,7 @@ CONFIG = {"project": "demo",
           "roles": {"architect": "fake", "backend": "fake", "ui": "fake", "review": "fake"},
           "budgets": {"attempts": 2, "engine_timeout_min": 1, "run_timeout_min": 5,
                       "review_rounds": 1, "project_max_usd": 10},
-          "protected": ["scripts/verify.sh", ".harness/"],
+          "protected": ["scripts/verify.sh", ".factory/"],
           "stack": {"type": "host", "reason": "unit tests"}, "merge": "ff", "notify": "none"}
 
 PLAN = {"milestones": [
@@ -59,10 +59,10 @@ def git(repo, *args):
 
 class CoreCase(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="harness-test-")).resolve()
+        self.tmp = Path(tempfile.mkdtemp(prefix="factory-test-")).resolve()
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        self._old = {k: os.environ.get(k) for k in ("HARNESS_HOME", "HARNESS_FAKE_ENGINE", *GIT_ENV)}
-        os.environ["HARNESS_HOME"] = str(self.tmp / "home")
+        self._old = {k: os.environ.get(k) for k in ("FACTORY_HOME", "FACTORY_FAKE_ENGINE", *GIT_ENV)}
+        os.environ["FACTORY_HOME"] = str(self.tmp / "home")
         os.environ.update(GIT_ENV)
         self.addCleanup(self._restore)
         self.repo = self.tmp / "repo"
@@ -78,8 +78,8 @@ class CoreCase(unittest.TestCase):
         r = self.repo
         for f, body in {"scripts/verify.sh": verify, "scripts/holdout.sh": HOLDOUT_SH,
                         "spec/frozen.txt": "frozen\n", "src/.gitkeep": "", "README.md": "x\n",
-                        ".harness/config.json": json.dumps(config or CONFIG),
-                        ".harness/plan.json": json.dumps(plan or PLAN)}.items():
+                        ".factory/config.json": json.dumps(config or CONFIG),
+                        ".factory/plan.json": json.dumps(plan or PLAN)}.items():
             p = r / f
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(body)
@@ -98,15 +98,15 @@ class CoreCase(unittest.TestCase):
         return r
 
     def fake(self, body: str) -> Path:
-        """Write a fake engine script. It runs with cwd=worktree; env has HARNESS_ATTEMPT/ROLE."""
+        """Write a fake engine script. It runs with cwd=worktree; env has FACTORY_ATTEMPT/ROLE."""
         p = self.tmp / f"fake_{len(list(self.tmp.glob('fake_*.py')))}.py"
-        p.write_text("import os, sys, pathlib\nA = int(os.environ['HARNESS_ATTEMPT'])\n"
-                     "ROLE = os.environ['HARNESS_ROLE']\n" + textwrap.dedent(body))
-        os.environ["HARNESS_FAKE_ENGINE"] = str(p)
+        p.write_text("import os, sys, pathlib\nA = int(os.environ['FACTORY_ATTEMPT'])\n"
+                     "ROLE = os.environ['FACTORY_ROLE']\n" + textwrap.dedent(body))
+        os.environ["FACTORY_FAKE_ENGINE"] = str(p)
         return p
 
     def run_ms(self, milestone="M1", role="build", **kw):
-        from harness import runner
+        from factory import runner
         return runner.execute_run("demo", milestone, role, "fake", **kw)
 
 

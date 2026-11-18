@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Install or update hermes-agent-harness for the current user. Idempotent.
+# Install or update hermes-agent-factory for the current user. Idempotent.
 #
-#   curl -fsSL https://raw.githubusercontent.com/theRealMarkCastillo/hermes-harness/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/eidolonlabs-ai/hermes-factory/main/install.sh | bash
 #   ./install.sh              from a checkout: editable install, edits take effect at once
 #   ./install.sh --dry-run    print what would change
 #
 # What it does:
-#   1. installs the engine (`harness`, `harness-hook`) as an isolated tool with uv or pipx
-#   2. runs `harness setup`: Hermes skills, the harness-coder / harness-worker profiles and the
+#   1. installs the engine (`factory`, `factory-hook`) as an isolated tool with uv or pipx
+#   2. runs `factory setup`: Hermes skills, the factory-coder / factory-worker profiles and the
 #      guard plugin. Your default profile's config is never modified.
 set -euo pipefail
 
-REPO_URL="git+https://github.com/theRealMarkCastillo/hermes-harness"
+REPO_URL="git+https://github.com/eidolonlabs-ai/hermes-factory"
 DRY=0
 for a in "$@"; do [[ "$a" == "--dry-run" ]] && DRY=1; done
 say() { echo "==> $*"; }
@@ -22,7 +22,7 @@ SRC=""
 SELF="${BASH_SOURCE[0]:-}"
 if [[ -n "$SELF" && -f "$SELF" ]]; then
   DIR="$(cd "$(dirname "$SELF")" && pwd)"
-  if [[ -f "$DIR/pyproject.toml" && -d "$DIR/harness" ]]; then SRC="$DIR"; fi
+  if [[ -f "$DIR/pyproject.toml" && -d "$DIR/factory" ]]; then SRC="$DIR"; fi
 fi
 
 if command -v uv >/dev/null 2>&1; then
@@ -42,12 +42,12 @@ else
 fi
 case ":$PATH:" in *":$BIN:"*) ;; *) echo "    note: add $BIN to PATH"; export PATH="$BIN:$PATH";; esac
 
-say "hermes: harness setup"
+say "hermes: factory setup"
 if (( DRY )); then
-  if command -v harness >/dev/null 2>&1 && harness setup --dry-run 2>/dev/null; then :
-  else echo "[dry-run] harness setup"; fi
+  if command -v factory >/dev/null 2>&1 && factory setup --dry-run 2>/dev/null; then :
+  else echo "[dry-run] factory setup"; fi
 else
-  harness setup
+  factory setup
 fi
 
-say "done. Next: harness doctor"
+say "done. Next: factory doctor"

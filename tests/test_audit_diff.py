@@ -4,12 +4,12 @@ import subprocess
 import tempfile
 import unittest
 
-from harness import audit_diff as ad
+from factory import audit_diff as ad
 
 # Fixture strings are assembled from pieces so this test file never trips the scanner.
 AWS = "".join(["AKIA", "1234567890ABCDEF"])
 EV = "".join(["ev", "al"])
-MARK = "-".join(["harness", "audit", "ignore"])
+MARK = "-".join(["factory", "audit", "ignore"])
 SQ = "".join(["SEL", "ECT"])
 
 
@@ -142,7 +142,7 @@ class AuditTests(Base):
 
     def test_own_source_is_clean(self):
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        r = ad.audit(os.path.join(here, "harness"), all_files=True)
+        r = ad.audit(os.path.join(here, "factory"), all_files=True)
         mine = {"audit_diff.py", "hygiene.py", "detect.py"}
         self.assertEqual([f for f in r["findings"] if f["file"] in mine], [])
 
@@ -219,7 +219,7 @@ class FormatterTests(Base):
         self.assertEqual(len(c.details), 2)
         s = ad.to_sarif(r)
         self.assertEqual(s["version"], "2.1.0")
-        self.assertEqual(s["runs"][0]["tool"]["driver"]["name"], "harness")
+        self.assertEqual(s["runs"][0]["tool"]["driver"]["name"], "factory")
         levels = [x["level"] for x in s["runs"][0]["results"]]
         self.assertEqual(levels, ["error", "warning"])
         self.assertEqual(s["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"]["startLine"], 1)

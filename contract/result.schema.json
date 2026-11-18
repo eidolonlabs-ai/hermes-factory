@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "harness-contract/result.schema.json",
+  "$id": "factory-contract/result.schema.json",
   "title": "One run's result.json (written atomically, stored outside the project repo)",
   "type": "object",
   "required": [
