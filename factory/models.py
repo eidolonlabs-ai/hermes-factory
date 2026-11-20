@@ -29,6 +29,7 @@ DEFAULT_CONFIG: dict = {
     "holdout": {"enabled": True, "command": "scripts/holdout.sh {milestone}",
                 "feedback": "names_and_messages"},
     "roles": {"architect": "claude", "backend": "codex", "ui": "claude", "review": "cross"},
+    "cross": None,  # absent/null keeps legacy defaults; an explicit map is authoritative
     "engines": {"claude": {"model": "opus", "max_usd_per_run": 15},
                 "codex": {"effort": "high"},
                 "hermes": {"profile": "factory-coder"}},
@@ -184,6 +185,10 @@ def validate_config(raw: dict) -> dict:
     for role, val in cfg["roles"].items():
         if val not in ENGINE_NAMES and not (role == "review" and val == "cross"):
             raise ConfigError(f"roles.{role}: unknown engine {val!r}")
+    if cfg["cross"] is not None:
+        for builder, reviewer in _obj(cfg["cross"], "cross", ENGINE_NAMES).items():
+            if reviewer not in ENGINE_NAMES or reviewer == builder:
+                raise ConfigError(f"cross.{builder} must name a different valid engine")
     for en, ev in cfg["engines"].items():
         for k, val in ev.items():
             if k == "max_usd_per_run":

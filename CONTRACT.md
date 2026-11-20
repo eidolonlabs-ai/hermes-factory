@@ -17,10 +17,11 @@ Run by the factory, outside the agent's session, on the candidate worktree. Step
 | 1 | Scope | a changed path is outside the milestone's `allowed_paths`, or a protected path changed (stop for a human) |
 | 2 | Frozen | any frozen file differs from the freeze commit, or is missing |
 | 3 | Hygiene | `.env` or a private key is tracked, or `.env` exists and is not git-ignored |
-| 4 | Verify | `scripts/verify.sh <milestone>` (or configured verification checks) exits non-zero (it boots the real stack, §4) |
-| 5 | Holdouts | the holdout command exits non-zero |
-| 6 | Diff audit | a high-severity finding (secret, dynamic exec, SQL interpolation) in changed files |
-| 7 | Candidate hash | the code changed while the gate ran |
+| 4 | Compose policy | the Compose configuration violates the project's isolation rules |
+| 5 | Diff audit | a high-severity finding (secret, dynamic exec, SQL interpolation) in changed files |
+| 6 | Verify | `scripts/verify.sh <milestone>` (or configured verification checks) exits non-zero (it boots the real stack, §4) |
+| 7 | Holdouts | the holdout command exits non-zero |
+| 8 | Candidate hash | the code changed while the gate ran |
 
 Steps a project does not use (no holdouts, no audit) are reported `NOT_RUN`.
 

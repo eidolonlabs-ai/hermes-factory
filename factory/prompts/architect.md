@@ -32,7 +32,9 @@ Produce and commit:
      adversarial cases (ordering, duplicates, concurrency, time boundaries, consistency).
    - Playwright E2E tests for UI flows, tagged per milestone, using `data-testid` selectors
      defined in SPEC.md.
-   Each test must be traceable to a requirement (comment with the source line).
+   Each test must be traceable to a requirement (comment with the source line). Every visible
+   and holdout test first run at `Mk` must be satisfiable using only features delivered by
+   `Mk` or earlier in `.factory/plan.json`. Check this for every test you add or change.
 6. HOLDOUT tests in `tests/holdout/` (a second, independent set of adversarial tests) and
    `scripts/holdout.sh <MILESTONE_ID>` that runs them. At freeze they are removed from the repo;
    builders only ever see failing test ids and assertion messages. Everything `verify.sh` runs
@@ -44,16 +46,16 @@ Produce and commit:
    {
      "milestones": [
        {"id": "M1", "title": "...", "goal": "...", "acceptance": ["..."],
-        "allowed_paths": ["src/", "web/"], "builder": "codex|claude", "ui": false,
+        "allowed_paths": ["src/", "web/"], "ui": false,
         "checkpoint": false}
      ],
      "frozen": ["tests/", "scripts/verify.sh", "scripts/holdout.sh", "contracts/"],
      "holdout": ["tests/holdout/"]
    }
    ```
+   Let project roles select engines unless explicitly directed to pin a milestone engine.
    4-6 sequential, independently verifiable milestones (ids M1, M2, ...; M0 is reserved).
-   Backend/infrastructure milestones -> builder `codex`; frontend/UI/E2E -> `claude` with
-   `"ui": true`. `allowed_paths` lists what the milestone may touch. Acceptance items must be
+   Mark frontend/UI/E2E milestones with `"ui": true`. `allowed_paths` lists what the milestone may touch. Acceptance items must be
    checkable by `scripts/verify.sh Mk`.
 
 After the freeze the `frozen` files can never be edited by builders, so make the tests correct,

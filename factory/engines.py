@@ -9,7 +9,8 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .models import ENGINE_NAMES
+from .models import ConfigError, ENGINE_NAMES
+from .usage import supports_hermes_usage, token_counts
 
 CLAUDE_EMPTY_MCP = '{"mcpServers":{}}'
 PKG_PARENT = str(Path(__file__).resolve().parent.parent)
@@ -22,6 +23,7 @@ class Invocation:
     stdin_text: str = ""
     last_message: Path | None = None
     extra: dict = field(default_factory=dict)
+    usage_file: Path | None = None
 
 
 def other_vendor(engine: str) -> str:
@@ -29,8 +31,14 @@ def other_vendor(engine: str) -> str:
             "fake": "fake"}[engine]
 
 
-def resolve_review_engine(cfg_value: str, builder: str) -> str:
-    return other_vendor(builder) if cfg_value == "cross" else cfg_value
+def resolve_review_engine(cfg_value: str, builder: str, cross: dict | None = None) -> str:
+    if cfg_value != "cross":
+        return cfg_value
+    if cross is None:
+        return other_vendor(builder)
+    if builder not in cross:
+        raise ConfigError(f"cross has no reviewer configured for {builder!r}")
+    return cross[builder]
 
 
 def probe(engine: str) -> tuple[bool, str]:
@@ -151,8 +159,15 @@ def build_invocation(engine: str, *, role: str, worktree: Path, prompt: str, pro
             raise ValueError("hermes engine has no read-only mode")
         # --accept-hooks: the factory-coder profile's guard/verify hooks run without the
         # interactive first-use consent prompt (only in this dedicated profile).
-        return Invocation(["hermes", "-p", ecfg.get("profile", "factory-coder"), "-z", prompt,
-                           "--yolo", "--accept-hooks"], env, "", last)
+        argv = ["hermes", "-p", ecfg.get("profile", "factory-coder"), "-z", prompt,
+                "--yolo", "--accept-hooks"]
+        executable = shutil.which("hermes")
+        report = None
+        if executable and supports_hermes_usage(executable):
+            report = run_dir / f"engine-{role}-{attempt}.usage.json"
+            report.unlink(missing_ok=True)
+            argv += ["--usage-file", str(report)]
+        return Invocation(argv, env, "", last, usage_file=report)
     if engine == "agy":
         if read_only:
             raise ValueError("agy engine has no read-only mode")
@@ -195,6 +210,11 @@ def parse_output(engine: str, log: Path, last: Path | None) -> dict:
             info.update(cost_usd=d.get("total_cost_usd"), turns=d.get("num_turns"),
                         is_error=bool(d.get("is_error")),
                         final=str(d.get("result", ""))[-1500:])
+            stats = d.get("usage")
+            if isinstance(stats, dict):
+                info["tokens"] = token_counts({"input": stats.get("input_tokens"),
+                    "output": stats.get("output_tokens"), "cache_read": stats.get("cache_read_input_tokens"),
+                    "cache_write": stats.get("cache_creation_input_tokens")})
             if d.get("structured_output") is not None:
                 info["structured_output"] = d["structured_output"]
         else:

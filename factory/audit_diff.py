@@ -215,7 +215,7 @@ def _scan_file(abs_path: str, rel: str) -> tuple[bool, list[dict]]:
                 or PY_SQL_FORMAT_RE.search(raw)):
             findings.append(_finding(
                 "sql-interpolation", "high", rel, n, snip,
-                "Raw string/template interpolation inside SQL statement; use parameterized queries."))
+                "SQL text built with string interpolation; use static SQL and bind values with placeholders."))
     return True, findings
 
 
@@ -263,6 +263,8 @@ def to_check(result: dict) -> Check:
         return Check("audit-diff", "FAIL", f"{high} high-severity finding(s) in {n} file(s)", details)
     if result["status"] == "WARN":
         return Check("audit-diff", "PASS", f"{len(f)} non-blocking finding(s) in {n} file(s)", details)
+    if n == 0:
+        return Check("audit-diff", "NOT_RUN", "no changed files could be scanned")
     return Check("audit-diff", "PASS", f"no findings in {n} file(s)", details)
 
 
@@ -270,7 +272,7 @@ _SARIF_RULES = {
     "hardcoded-secret": ("HardcodedSecret", "Hardcoded secret, credential, or private key material"),
     "dangerous-exec": ("DangerousExec", "Dynamic code execution or unparameterized shell command interpolation"),
     "xss-sink": ("XssSink", "Unescaped HTML DOM sink"),
-    "sql-interpolation": ("SqlInterpolation", "Unparameterized string interpolation inside SQL statement"),
+    "sql-interpolation": ("SqlInterpolation", "String interpolation used to construct SQL text"),
     "slice-boundary-violation": ("SliceBoundaryViolation",
                                  "Modified file is outside assigned slice ownership boundaries"),
 }

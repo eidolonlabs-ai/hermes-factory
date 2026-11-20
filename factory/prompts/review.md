@@ -1,5 +1,5 @@
 You are the INDEPENDENT REVIEWER for milestone {milestone} of `{project}` in `{repo}`, working
-fully unattended. A different agent ({other_engine}) implemented it. No human is available;
+fully unattended. A different agent implemented it. No human is available;
 never ask questions. Log ambiguities in `RFI.md` and continue.
 
 ## Milestone {milestone}: {title}

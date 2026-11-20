@@ -143,12 +143,14 @@ def cmd_doctor(a) -> int:
 def cmd_intake(a) -> int:
     from .intake import run_intake
     cfg = None
-    try:
+    requested = Path(a.repo or os.getcwd()).expanduser().resolve()
+    if a.project or a.repo or (requested / ".factory/config.json").is_file():
         repo, _ = resolve(a)
         cfg = load_config(repo)
-    except (ConfigError, KeyError):
-        pass
-    res = run_intake(Path(a.source), a.engine, timeout_s=a.timeout, cfg=cfg)
+    engine = a.engine or (cfg or DEFAULT_CONFIG)["roles"]["architect"]
+    if engine in ("hermes", "agy"):
+        raise ConfigError(f"{engine} has no read-only intake mode; use --engine claude or codex")
+    res = run_intake(Path(a.source), engine, timeout_s=a.timeout, cfg=cfg)
     out({k: res.get(k) for k in ("run_id", "status", "report", "reason", "run_dir")})
     return 0 if res["status"] in ("needs_clarification", "ready_for_planning") else 1
 
@@ -180,6 +182,18 @@ def _run_args(a, feedback_file: str | None = None) -> list[str]:
 def cmd_run(a) -> int:
     from . import runner
     repo, project = resolve(a)
+    if not a.engine or a.review_engine in ("configured", "cross"):
+        cfg = load_config(repo)
+        if not a.engine:
+            if (a.milestone, a.role) != ("M0", "build"):
+                raise ConfigError("--engine is required except for an M0 build")
+            a.engine = cfg["roles"]["architect"]
+        if a.review_engine == "configured":
+            from .pipeline import pick_reviewer
+            ms = milestone_def(repo, a.milestone, state.load_state(project).get("extra_milestones"))
+            a.review_engine = pick_reviewer(ms, cfg, a.engine)
+        elif a.review_engine == "cross":
+            a.review_engine = engines.resolve_review_engine("cross", a.engine, cfg.get("cross"))
     fb_path = str(Path(a.feedback_file).expanduser().resolve()) if a.feedback_file else None
     feedback = Path(fb_path).read_text() if fb_path else ""
     run_id = validate_run_id(a.run_id) if a.run_id is not None else None
@@ -244,18 +258,40 @@ def cmd_gate(a) -> int:
     st = state.load_state(project)
     cfg = load_config(repo)
     wt = Path(a.worktree).resolve() if a.worktree else repo
-    ms = milestone_def(repo, a.milestone, st.get("extra_milestones"))
-    base = a.base
-    if not base:
-        base = workspace.git(wt, "rev-parse", "HEAD")
-        if wt != repo:
-            base = workspace.git(wt, "merge-base", "HEAD", workspace.current_branch(repo))
-    run_id = f"gate-{int(time.time())}"
+    if a.final:
+        from .pipeline import all_milestones
+        if a.base is not None:
+            raise ConfigError("--final uses the frozen baseline; omit --base")
+        base = st.get("freeze_sha")
+        if not base:
+            raise ConfigError("--final requires a frozen project; run `factory freeze`")
+        milestones = [m for m in all_milestones(repo, st) if m["id"] != "M0"]
+        if not milestones:
+            raise ConfigError("--final requires at least one post-freeze milestone")
+        # The last milestone selects the cumulative test suite, not the diff scope.
+        ms = {**milestones[-1], "allowed_paths": list(dict.fromkeys(
+            path for m in milestones for path in m["allowed_paths"]))}
+    else:
+        ms = milestone_def(repo, a.milestone, st.get("extra_milestones"))
+        base = a.base
+        if not base:
+            if wt != repo:
+                base = workspace.git(wt, "merge-base", "HEAD", workspace.current_branch(repo))
+            else:
+                base = st.get("done", {}).get(a.milestone, {}).get("base_sha")
+                if not base and st.get("freeze_sha") and a.milestone != "M0":
+                    raise ConfigError("no recorded milestone baseline; pass --base or use --final")
+                base = base or workspace.head_sha(wt)
+    try:
+        base = workspace.git(wt, "rev-parse", "--verify", "--end-of-options", f"{base}^{{commit}}")
+    except workspace.WorkspaceError as exc:
+        raise ConfigError(f"invalid gate baseline: {base!r}") from exc
+    run_id = f"gate-{time.time_ns()}"
     ctx = gate_mod.GateContext(project=project, repo=repo, worktree=wt, base=base, milestone=ms,
                                config=cfg, freeze_sha=st.get("freeze_sha"), frozen=st.get("frozen", []),
-                               run_id=run_id, out_dir=state.run_dir(project, run_id))
+                               run_id=run_id, out_dir=state.run_dir(project, run_id), require_diff=a.final)
     ok, checks = gate_mod.run_gate(ctx)
-    out({"ok": ok, "milestone": a.milestone, "gate_json": str(ctx.out_dir / "gate.json"),
+    out({"ok": ok, "milestone": ms["id"], "gate_json": str(ctx.out_dir / "gate.json"),
          "checks": [{"id": c.id, "status": c.status, "summary": c.summary} for c in checks]})
     return 0 if ok else 1
 
@@ -294,6 +330,7 @@ def cmd_plan_add(a) -> int:
 
 
 def cmd_status(a) -> int:
+    from .usage import COST_BASIS
     repo, project = resolve(a)
     st = state.load_state(project)
     active = []
@@ -317,7 +354,9 @@ def cmd_status(a) -> int:
     out({"project": project, "repo": st["repo"], "freeze_sha": st.get("freeze_sha"),
          "plan": plan_ids, "extra_milestones": list(st.get("extra_milestones", {})),
          "done": sorted(st.get("done", {})), "interventions": len(st.get("interventions", [])),
-         "cost_usd": st.get("cost_usd", 0), "active_runs": active, "recent_runs": st["runs"][-5:]})
+         "cost_usd": st.get("cost_usd", 0), "cost_basis": COST_BASIS, "tokens": st.get("tokens", {}),
+         "usage_incomplete_attempts": st.get("usage_incomplete_attempts", 0),
+         "active_runs": active, "recent_runs": st["runs"][-5:]})
     return 0
 
 
@@ -367,17 +406,17 @@ def build_parser() -> argparse.ArgumentParser:
     add("doctor", cmd_doctor)
     p = add("intake", cmd_intake)
     p.add_argument("source")
-    p.add_argument("--engine", required=True, choices=engines.ENGINE_NAMES if hasattr(engines, "ENGINE_NAMES") else None)
+    p.add_argument("--engine", choices=engines.ENGINE_NAMES, help="default: configured architect")
     p.add_argument("--timeout", type=int, default=1200)
     p = add("freeze", cmd_freeze)
     p.add_argument("--force", action="store_true")
     p = add("run", cmd_run)
     p.add_argument("--milestone", required=True)
     p.add_argument("--role", choices=["build", "review"], required=True)
-    p.add_argument("--engine", required=True)
+    p.add_argument("--engine", choices=engines.ENGINE_NAMES, help="optional for M0 build (uses architect)")
     p.add_argument("--attempts", type=int)
     p.add_argument("--feedback-file")
-    p.add_argument("--review-engine", help="chain a review phase after a passing build (or 'cross')")
+    p.add_argument("--review-engine", help="chain a review after a passing build: engine name, 'configured', or 'cross'")
     p.add_argument("--no-merge", action="store_true")
     p.add_argument("--detach", action="store_true")
     p.add_argument("--run-id")
@@ -385,7 +424,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("run_id")
     p.add_argument("--max", type=float, default=540)
     p = add("gate", cmd_gate)
-    p.add_argument("--milestone", required=True)
+    mode = p.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--milestone")
+    mode.add_argument("--final", action="store_true",
+                      help="gate the whole build since freeze using the last milestone’s tests")
     p.add_argument("--worktree")
     p.add_argument("--base")
     p = add("pipeline", cmd_pipeline)

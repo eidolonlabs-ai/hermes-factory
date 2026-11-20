@@ -1,5 +1,5 @@
 You are the INDEPENDENT REVIEWER for milestone M0 of `{project}` in `{repo}`, working
-unattended. Another agent ({other_engine}) wrote the contracts, skeleton, tests and plan. No
+unattended. Another agent wrote the contracts, skeleton, tests and plan. No
 human is available; never ask questions. Log ambiguities in `RFI.md` and continue.
 
 Review cold against the ONLY requirements: `inputs/HANDOFF.md`, `inputs/CLARIFICATIONS.md`,
@@ -8,7 +8,10 @@ Review cold against the ONLY requirements: `inputs/HANDOFF.md`, `inputs/CLARIFIC
 Check and FIX directly (nothing is frozen yet):
 1. Coverage: every requirement and clarification has at least one test; adversarial and edge
    cases are tested, not just happy paths. Holdout tests (`tests/holdout/`) are independent of
-   the visible tests and also cover them.
+   the visible tests and also cover them. For every visible and holdout test, compare the
+   first milestone whose script runs it with `.factory/plan.json`. Every dependency must be
+   delivered by that milestone or earlier. Recheck any tests you add or change; move tests
+   that require later features to the milestone that delivers the last dependency.
 2. Correctness: tests assert the right behaviour, are deterministic, can pass once the feature is
    implemented correctly, and do not depend on internals a reasonable implementation might do
    differently.
@@ -18,7 +21,7 @@ Check and FIX directly (nothing is frozen yet):
    failure. `compose.yaml` has healthchecks, a test service, no `container_name`, no published
    ports.
 5. Plan: `.factory/plan.json` has sensible milestones, acceptance items, `allowed_paths`, correct
-   builder assignment (backend/infra -> codex, UI/E2E -> claude, `ui: true`), and its `frozen`
+   UI tagging (`ui: true` for UI/E2E), and its `frozen`
    list covers every test file plus `scripts/verify.sh`, `scripts/holdout.sh`, and contracts.
 
 Write `docs/reviews/M0.md`: each finding, what you changed, or why no change. Run

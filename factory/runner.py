@@ -15,7 +15,7 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
-from . import engines, gate, state, workspace
+from . import engines, gate, state, usage, workspace
 from .engines import resolve_review_engine
 from .evidence import now, read_json, tail, write_json, write_result
 from .models import ConfigError, load_config, milestone_def, validate_run_id
@@ -130,11 +130,13 @@ def build_prompt(role: str, ms: dict, *, project, repo, frozen, base_sha, engine
                   allowed_paths=", ".join(ms.get("allowed_paths", [])) or "(any)",
                   frozen=", ".join(frozen) or "(none yet)", verify_id=ms.get("verify_as", mid),
                   compose_project=compose_proj, base_sha=base_sha, engine=engine,
-                  other_engine=engines.other_vendor(engine), feedback=fb)
+                  feedback=fb)
 
 
 class _Ctx:
-    pass
+    cfg: dict
+    tokens: dict
+    usage_incomplete_attempts: int
 
 
 def _phase(c: _Ctx, role: str, engine: str, max_attempts: int, feedback: str) -> dict:
@@ -168,8 +170,15 @@ def _phase(c: _Ctx, role: str, engine: str, max_attempts: int, feedback: str) ->
         _down_engine_stack(c)  # agents boot stacks while working; never leave them running
         info = engines.parse_output(engine, Path(res.log), inv.last_message)
         info.update(rc=res.returncode, timed_out=res.timed_out, seconds=int(res.duration_s))
-        c.cost += float(info.get("cost_usd") or 0)
-        c.run_cost += float(info.get("cost_usd") or 0)
+        if inv.usage_file is not None:
+            info.update(usage.hermes_usage(inv.usage_file))
+        amount = usage.cost_amount(info.get("cost_usd"))
+        tokens = info.get("tokens") or {}
+        c.cost += amount or 0
+        c.run_cost += amount or 0
+        usage.add_tokens(c.tokens, tokens)
+        if amount is None or not tokens:
+            c.usage_incomplete_attempts += 1
         entry = {"role": role, "attempt": n, "engine": engine, "prompt": pf.name,
                  "engine_log": Path(res.log).name,
                  "engine_info": {k: v for k, v in info.items() if k != "structured_output"}}
@@ -213,6 +222,7 @@ def execute_run(project: str, milestone: str, role: str, engine: str, *, attempt
                  engine=engine, started=result["started"])
     lock = ws = None
     c = _Ctx()
+    c.tokens, c.usage_incomplete_attempts = {}, 0
     try:
         if role not in ("build", "review"):
             raise ConfigError(f"unknown role {role}")
@@ -249,7 +259,7 @@ def execute_run(project: str, milestone: str, role: str, engine: str, *, attempt
         r = _phase(c, role, engine, max_attempts, feedback)
         phases.append(r)
         if r["passed"] and role == "build" and review_engine:
-            reng = resolve_review_engine(review_engine, engine)
+            reng = resolve_review_engine(review_engine, engine, c.cfg.get("cross"))
             ok, why = engines.probe(reng)
             if not ok:
                 r = dict(status="engine_unavailable", passed=False, checks=r["checks"], history=[],
@@ -299,7 +309,8 @@ def execute_run(project: str, milestone: str, role: str, engine: str, *, attempt
         result["finished"] = now()
         if ws:
             result["worktree_kept"] = ws.path.exists()
-        result["cost_usd"] = getattr(c, "run_cost", 0.0)
+        result.update(cost_usd=getattr(c, "run_cost", 0.0), cost_basis=usage.COST_BASIS,
+                      tokens=c.tokens, usage_incomplete_attempts=c.usage_incomplete_attempts)
         write_result(rdir, result)
         write_status(rdir, state=result["status"], phase="done", finished=result["finished"])
         try:
@@ -318,8 +329,12 @@ def _record_done(project, milestone, run_id, sha, base):
 def _record_run(project, result):
     def f(s):
         s["runs"].append({k: result.get(k) for k in ("run_id", "milestone", "role", "engine",
-                                                     "status", "passed", "merged")} | {"at": now()})
+                                                     "status", "passed", "merged", "cost_usd", "tokens",
+                                                     "usage_incomplete_attempts")} | {"at": now()})
         s["cost_usd"] = float(s.get("cost_usd", 0)) + float(result.get("cost_usd") or 0)
+        usage.add_tokens(s.setdefault("tokens", {}), result["tokens"])
+        s["usage_incomplete_attempts"] = (s.get("usage_incomplete_attempts", 0)
+                                         + result["usage_incomplete_attempts"])
     state.update_state(project, f)
 
 
@@ -328,7 +343,8 @@ def run_summary(rdir: Path) -> dict:
     r = read_json(rdir / "result.json", {})
     short = {k: r.get(k) for k in ("run_id", "milestone", "role", "engine", "status", "passed",
                                    "merged", "summary", "attempts", "base_sha", "head_sha",
-                                   "worktree", "branch", "cost_usd")}
+                                   "worktree", "branch", "cost_usd", "cost_basis", "tokens",
+                                   "usage_incomplete_attempts")}
     if not r.get("passed"):
         bad = [c for c in r.get("checks", []) if c["status"] == "FAIL"]
         short["failed_checks"] = [{"id": c["id"], "summary": c["summary"],

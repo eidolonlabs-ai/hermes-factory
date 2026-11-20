@@ -17,7 +17,7 @@ Run M0 to lock contracts, real-stack Compose orchestration, and frozen tests bef
 
 ## 1. Execute M0 Contract Authoring
 ```bash
-factory run --milestone M0 --role build --engine claude --review-engine codex --detach
+factory run --milestone M0 --role build --review-engine configured --detach
 ```
 Watch in the background (`terminal(background=true, notify=true)` running `factory wait RUN_ID --max 36000`) and end your turn—never poll in a loop.
 
