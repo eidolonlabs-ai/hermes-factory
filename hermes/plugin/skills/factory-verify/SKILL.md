@@ -16,7 +16,7 @@ metadata:
 Decide pass/fail solely from external exit codes and real-stack UI checks—never from a builder's self-report.
 
 ## 1. Run External Gate (`NOT_RUN !== PASS`)
-Run `factory gate --milestone <last>` in background + notify (`terminal(background=true, notify=true)`):
+Run `factory gate --final` in background + notify (`terminal(background=true, notify=true)`):
 - Enforces **Scope**, **Frozen**, **Hygiene**, **Verify** (`scripts/verify.sh <milestone>` on real Docker Compose services, never mocked DBs), **Holdouts**, **Diff Audit**, **Candidate Hash**, and **Compose Teardown**.
 - `NOT_RUN` is never `PASS`. Report host-stack runs (`stack.type: host`) explicitly as `"not isolated"`.
 - On red gates, show the failing check name and the tail log path—never dump huge logs into chat.

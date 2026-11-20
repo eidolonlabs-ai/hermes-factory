@@ -158,12 +158,16 @@ Order, first failure stops (see `CONTRACT.md`):
 2. **Frozen** — `git diff <freeze_sha> -- <frozen>` empty and files present.
 3. **Hygiene** — no tracked `.env` or private keys; `.env` ignored.
 4. **Compose policy** — §8.
-5. **Verify** — `verify.command`; `NOT_RUN` never counts as `PASS`; `require_tests`.
-6. **Holdouts** — copied in, run, removed in `finally`; builder sees only test ids and
+5. **audit-diff** — file:line findings (secrets, eval/exec, SQL interpolation, XSS sinks);
+   high fails, medium is reported. Runs before tests so the builder sees findings early.
+6. **Verify** — `verify.command`; `NOT_RUN` never counts as `PASS`; `require_tests`.
+7. **Holdouts** — copied in, run, removed in `finally`; builder sees only test ids and
    assertion messages (or counts only).
-7. **audit-diff** — file:line findings (secrets, eval/exec, SQL interpolation, XSS sinks);
-   high fails, medium is reported.
 8. **Candidate hash** — unchanged from the start of the gate.
+
+After the pipeline completes, `factory gate --final` checks the diff since freeze against
+all planned milestone paths and runs the last milestone's cumulative verification and holdouts.
+Scope reports `NOT_RUN` for an empty diff; audit reports `NOT_RUN` when no files were scanned.
 
 Gate output: one JSON line + `result.json`; logs stay on disk, only tails go into prompts.
 
@@ -219,7 +223,7 @@ factory intake SOURCE --engine E           read-only architect → questions JSO
 factory freeze
 factory run --milestone M --role build|review --engine E [--detach]
 factory wait RUN_ID                         0 pass · 1 fail · 3 crashed · 10 running
-factory gate --milestone M [--worktree P]
+factory gate (--milestone M | --final) [--worktree P] [--base SHA (milestone only)]
 factory pipeline [--until M] [--next]       stops at checkpoints / red / budget
 factory plan add M --goal ... --verify-as Mk
 factory preview | audit --engines a,b | status | note "text"

@@ -16,7 +16,8 @@ def pick_builder(ms: dict, cfg: dict) -> str:
 
 
 def pick_reviewer(ms: dict, cfg: dict, builder: str) -> str:
-    return engines.resolve_review_engine(ms.get("reviewer") or cfg["roles"]["review"], builder)
+    return engines.resolve_review_engine(ms.get("reviewer") or cfg["roles"]["review"],
+                                         builder, cfg.get("cross"))
 
 
 def all_milestones(repo: Path, st: dict) -> list[dict]:

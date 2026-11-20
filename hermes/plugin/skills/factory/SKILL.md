@@ -38,9 +38,9 @@ code yourself and never decide "done" yourself. Rules: `CONTRACT.md`; design: `D
 2. **Project**: `cd REPO && git init -b main` if needed; `factory init` (copies the template:
    AGENTS.md, compose.yaml, scripts, inputs/). Put the user's spec in `inputs/HANDOFF.md`.
    Commit. Projects that cannot run in Linux containers: `factory init --stack host --reason "..."`.
-3. **Intake (Shift-Left Pushback)**: `factory intake inputs/HANDOFF.md --engine codex` (read-only architect).
+3. **Intake (Shift-Left Pushback)**: `factory intake inputs/HANDOFF.md` (read-only architect).
    Audit `inputs/HANDOFF.md` for sufficiency; actively push back (`needs_clarification`) when requirements, failure modes, or the 4-Part State & Edge-Case Matrix are incomplete—never wave thin prompts into M0. Ask the user the blocking questions with `clarify` (one form, ≤5 questions per call, your recommended answer first). Write answers to `inputs/CLARIFICATIONS.md`, host constraints to `inputs/ENVIRONMENT.md`. Commit. `factory note "intake answers"`.
-4. **M0 contract**: `factory run --milestone M0 --role build --engine claude --review-engine codex --detach`,
+4. **M0 contract**: `factory run --milestone M0 --role build --review-engine configured --detach`,
    then a background watcher: `terminal(background=true, notify=true)` running
    `factory wait RUN_ID --max 36000`. End your turn.
 5. **Checkpoint 1** (on notify): summarize SPEC.md, `.factory/plan.json` (milestones, roles,
@@ -53,7 +53,7 @@ code yourself and never decide "done" yourself. Rules: `CONTRACT.md`; design: `D
    lines (what passed, what stopped, why). For a red gate show the failing check and the log
    tail path, not whole logs. Continue with `factory pipeline` when the user agrees; log every
    human decision with `factory note`.
-8. **Final**: run `factory gate --milestone <last>` yourself (background + notify);
+8. **Final**: run `factory gate --final` yourself (background + notify);
    `factory preview` and check the UI with the browser tools (desktop 1440x900 and mobile
    390x844); `factory preview --down` when the user is done. Optionally a cross-vendor audit:
    `templates/audit/` + `references/benchmarking.md`. Report wall time, attempts,
@@ -85,6 +85,6 @@ block `{"repo": "/abs/path", "milestone": "M3"}`. Chain cards with parents so th
   process artifacts like `docs/reviews` and `RFI.md` from every audited clone).
 
 ## Verification
-`factory gate --milestone <last>` exits 0 and its JSON shows every check PASS (holdout/audit
+`factory gate --final` exits 0 and its JSON shows every check PASS (holdout/audit
 may be NOT_RUN only if disabled), `compose-teardown` PASS, and `factory status` shows all
 milestones merged.

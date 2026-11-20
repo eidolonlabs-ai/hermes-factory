@@ -144,13 +144,35 @@ Or drive it yourself:
 ```bash
 cd ~/code/myapp && git init -b main && factory init
 $EDITOR inputs/HANDOFF.md
-factory intake inputs/HANDOFF.md --engine codex      # questions for you (read-only)
-factory run --milestone M0 --role build --engine claude --review-engine codex
+factory intake inputs/HANDOFF.md                      # read-only; uses roles.architect
+factory run --milestone M0 --role build --review-engine configured
 factory freeze                                        # after you approve .factory/plan.json
 factory pipeline                                      # M1..Mn until a checkpoint / red / budget
+factory gate --final                                 # audit the whole build since freeze
 factory status
 factory preview                                       # app with published ports; --down to stop
 ```
+
+To use Claude Code for building and Hermes for review, set these keys in
+`.factory/config.json` before intake and freeze:
+
+```json
+{
+  "roles": {"architect": "claude", "backend": "claude", "ui": "claude", "review": "cross"},
+  "cross": {"claude": "hermes", "hermes": "claude"}
+}
+```
+
+An explicit `cross` map replaces the legacy mapping; a builder without an entry has no
+cross reviewer. Explicit `builder` and `reviewer` values in the plan still override roles.
+Intake requires a read-only engine (Claude Code or Codex). Installed engines are not
+assumed to be subscribed or selected.
+
+`factory status` reports observed token counts and `cost_usd` as an API-rate estimate,
+not subscription spend. The project cap uses that estimate for build and review attempts.
+`usage_incomplete_attempts` flags missing cost or token data; historic runs are not backfilled.
+The cap is best-effort: unreported cost cannot be enforced against it. Attempt and
+wall-clock limits still apply, including on older Hermes releases without usage reports.
 
 For overnight runs or phone intake, use kanban mode: one card per milestone for the
 `factory-worker` profile (see `hermes/plugin/skills/factory-worker`).

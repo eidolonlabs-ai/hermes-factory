@@ -1,6 +1,6 @@
 """The gate (CONTRACT §2). Deterministic, exit-code based, first failure stops.
 
-Order: scope, frozen, hygiene, compose-policy, verify, holdout, audit-diff, candidate.
+Order: scope, frozen, hygiene, compose-policy, audit-diff, verify, holdout, candidate.
 NOT_RUN is never PASS; with require_tests a gate where no test check ran is a failure.
 Sibling modules (hygiene, audit_diff, compose) are imported lazily; ImportError = NOT_RUN.
 """
@@ -22,7 +22,7 @@ from .types import Check
 
 HUMAN_PREFIX = "HUMAN:"
 IMPLICIT_ALLOWED = ["RFI.md", "docs/reviews/"]
-STEPS = ["scope", "frozen", "hygiene", "compose-policy", "verify", "holdout", "audit-diff"]
+STEPS = ["scope", "frozen", "hygiene", "compose-policy", "audit-diff", "verify", "holdout"]
 TEST_CHECKS = ("verify", "m0-structure")
 
 
@@ -40,6 +40,7 @@ class GateContext:
     out_dir: Path
     env: dict | None = None
     _compose: dict = field(default_factory=dict)
+    require_diff: bool = False
 
     @property
     def verify_id(self) -> str:
@@ -69,7 +70,8 @@ def needs_human(checks: list[Check]) -> bool:
 def _scope(ctx: GateContext) -> list[Check]:
     t0 = time.monotonic()
     status = workspace.changed_status(ctx.worktree, ctx.base)
-    status = {p: s for p, s in status.items()}
+    if not status:
+        return [Check("scope", "NOT_RUN", "no paths changed against the baseline")]
     allowed = list(ctx.milestone.get("allowed_paths", [])) + IMPLICIT_ALLOWED
     stored = set(holdout.stored_files(ctx.project)) if ctx.freeze_sha else set()
     protected_hits = []
@@ -313,6 +315,11 @@ def run_gate(ctx: GateContext) -> tuple[bool, list[Check]]:
         else:
             checks.append(Check("candidate", "PASS", f"candidate {end[:12]} unchanged", [end]))
     ok = not failed
+    if ok and ctx.require_diff and not all(
+        any(c.id == name and c.status == "PASS" for c in checks) for name in ("scope", "audit-diff")
+    ):
+        checks.append(Check("require-diff", "FAIL", "final gate requires a nonempty scope and diff audit"))
+        ok = False
     if ok and ctx.config["verify"]["require_tests"]:
         if not any(c.id in TEST_CHECKS and c.status == "PASS" for c in checks):
             checks.append(Check("require-tests", "FAIL",

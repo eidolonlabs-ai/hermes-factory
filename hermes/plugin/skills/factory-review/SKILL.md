@@ -28,7 +28,7 @@ For every defect discovered in review:
 1. Write a failing regression test reproducing the exact bug first.
 2. Confirm failure in the test suite.
 3. Apply the minimal fix inside the milestone worktree.
-4. Re-run `factory gate` (`factory-verify`) before merging.
+4. Re-run `factory gate --milestone <id> --worktree <path> --base <starting-sha>` before merging.
 
 ## 3. Optional Full-Build Cross-Vendor Audit
 Follow `../factory/references/benchmarking.md` and `../factory/templates/audit/` (always stripping process artifacts like `docs/reviews/`, `RFI.md`, `.factory/`, and `inputs/` before cross-factory benchmark audits). Proceed to `factory-status`.

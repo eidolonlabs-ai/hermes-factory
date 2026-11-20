@@ -26,7 +26,7 @@ Analyze requirements in read-only mode before generating contracts or running bu
 
 ## 2. Run Read-Only Architect Analysis & `clarify`
 ```bash
-factory intake inputs/HANDOFF.md --engine codex
+factory intake inputs/HANDOFF.md
 ```
 Present blocking questions to the user with `clarify` (≤5 questions per call, recommended default first), ensuring coverage of the **4-Part State & Edge-Case Matrix**:
 1. Out-of-order & duplicate inputs (idempotency keys, retries, backdated updates).

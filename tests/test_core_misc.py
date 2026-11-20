@@ -144,8 +144,9 @@ class EngineTests(CoreCase):
         cfg = models.validate_config({"project": "x"})
         kw = dict(role="build", worktree=self.tmp, prompt="P", prompt_file=d / "p.md", run_dir=d,
                   cfg=cfg, frozen=[])
-        self.assertEqual(engines.build_invocation("hermes", **kw).argv,
-                         ["hermes", "-p", "factory-coder", "-z", "P", "--yolo", "--accept-hooks"])
+        with unittest.mock.patch("factory.engines.supports_hermes_usage", return_value=False):
+            self.assertEqual(engines.build_invocation("hermes", **kw).argv,
+                             ["hermes", "-p", "factory-coder", "-z", "P", "--yolo", "--accept-hooks"])
         self.assertEqual(engines.build_invocation("agy", **kw).argv,
                          ["agy", "-p", "P", "--dangerously-skip-permissions"])
         c = engines.build_invocation("codex", **kw).argv
@@ -285,7 +286,7 @@ class CliTests(CoreCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         out = json.loads(r.stdout)
         self.assertEqual(out["failed_checks"][0]["id"], "verify")
-        g = cli("gate", "--milestone", "M1", "--repo", str(self.repo), env=env)
+        g = cli("gate", "--milestone", "M1", "--base", "HEAD", "--repo", str(self.repo), env=env)
         self.assertEqual(g.returncode, 1)
         self.assertFalse(json.loads(g.stdout)["ok"])
 
